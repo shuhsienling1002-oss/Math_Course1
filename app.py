@@ -1,260 +1,336 @@
 import streamlit as st
+import plotly.graph_objects as go
 import time
-import random
-import os
+import math
 
-# --- 1. 核心功能 (嚴格遵照您的架構) ---
-def safe_rerun():
-    """自動判斷並執行重整"""
-    try:
-        st.rerun()
-    except AttributeError:
-        try:
-            st.experimental_rerun()
-        except:
-            st.stop()
+# ==========================================
+# 1. 系統配置與深海 HUD 樣式 (System Config)
+# ==========================================
+st.set_page_config(
+    page_title="Deep Dive: Zero-Entropy Math",
+    page_icon="⚓",
+    layout="centered"
+)
 
-def play_local_audio(filename):
-    """
-    播放指定路徑的音檔
-    路徑固定為: Teacher_Course22/audio/檔名
-    """
-    # 這裡直接指定路徑，不使用自動搜尋
-    file_path = f"Teacher_Course22/audio/{filename}"
-    
-    # 嘗試開啟並播放
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                audio_bytes = f.read()
-            st.audio(audio_bytes, format='audio/mp4')
-        else:
-            st.error(f"找不到檔案: {file_path}")
-    except Exception as e:
-        st.error(f"播放錯誤: {e}")
-
-# --- 0. 系統配置 ---
-st.set_page_config(page_title="Kaolahan", page_icon="🍲", layout="centered")
-
-# --- CSS 美化 (沿用您上傳的樣式架構，僅調整配色為暖色系) ---
+# 注入深海全息介面 CSS
 st.markdown("""
-    <style>
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-    .source-tag { font-size: 12px; color: #aaa; text-align: right; font-style: italic; }
-    
-    /* 單字卡 */
-    .word-card {
-        background: linear-gradient(135deg, #FFF3E0 0%, #ffffff 100%);
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        text-align: center;
-        margin-bottom: 15px;
-        border-bottom: 4px solid #FF7043;
-    }
-    .emoji-icon { font-size: 48px; margin-bottom: 10px; }
-    .amis-text { font-size: 22px; font-weight: bold; color: #E64A19; }
-    .chinese-text { font-size: 16px; color: #795548; }
-    
-    /* 句子框 */
-    .sentence-box {
-        background-color: #FFF8E1;
-        border-left: 5px solid #FFA000;
-        padding: 15px;
-        margin: 10px 0;
-        border-radius: 0 10px 10px 0;
+<style>
+    /* 全局背景：深海漸層 */
+    .stApp {
+        background: radial-gradient(circle at center, #1B263B 0%, #0D1B2A 100%);
+        color: #E0E1DD;
+        font-family: 'Courier New', Courier, monospace;
     }
 
-    /* 按鈕 */
-    .stButton>button {
-        width: 100%; border-radius: 12px; font-size: 20px; font-weight: 600;
-        background-color: #FFCCBC; color: #BF360C; border: 2px solid #FF7043; padding: 12px;
+    /* 標題樣式 */
+    h1 {
+        color: #00FFFF; /* 螢光青 */
+        text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        border-bottom: 2px solid #00FFFF;
+        padding-bottom: 10px;
+        text-align: center;
     }
-    .stButton>button:hover { background-color: #FFAB91; border-color: #E64A19; }
-    .stProgress > div > div > div > div { background-color: #FF7043; }
-    </style>
+
+    /* 戰術按鈕樣式 */
+    div.stButton > button {
+        width: 100%;
+        background-color: rgba(65, 90, 119, 0.3);
+        color: #4CC9F0;
+        border: 1px solid #4CC9F0;
+        border-radius: 6px;
+        padding: 0.6rem;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        font-weight: bold;
+        letter-spacing: 1px;
+    }
+    div.stButton > button:hover {
+        background-color: #4CC9F0;
+        color: #0D1B2A;
+        box-shadow: 0 0 15px #4CC9F0;
+        border-color: transparent;
+        transform: scale(1.02);
+    }
+
+    /* 資訊面板：玻璃擬態 */
+    div[data-testid="stMetric"], .stAlert {
+        background-color: rgba(27, 38, 59, 0.6) !important;
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(119, 141, 169, 0.3);
+        border-radius: 8px;
+        color: #E0E1DD !important;
+    }
+    
+    /* 隱藏預設元素 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+</style>
 """, unsafe_allow_html=True)
 
-# --- 2. 資料庫 (檔名已對應您上傳的檔案) ---
-vocab_data = [
-    {"amis": "Kaolahan", "chi": "所喜歡的", "icon": "❤️", "source": "核心單字", "audio": "kaolahan.m4a"},
-    {"amis": "Facidol", "chi": "麵包樹果", "icon": "🍈", "source": "食材", "audio": "facidol.m4a"},
-    {"amis": "Haca", "chi": "也 / 亦", "icon": "➕", "source": "連接詞", "audio": "haca.m4a"},
-    {"amis": "Maemin", "chi": "全部 / 所有的", "icon": "💯", "source": "數量", "audio": "maemin.m4a"},
-    {"amis": "Sikaen", "chi": "菜餚 / 配菜", "icon": "🍱", "source": "食物", "audio": "sikaen.m4a"},
-    # 注意：dateng.m4a 和 kohaw.m4a 您未上傳，若無檔案按播放會顯示錯誤
-    {"amis": "Dateng", "chi": "菜 / 野菜", "icon": "🥬", "source": "食物", "audio": "dateng.m4a"},
-    {"amis": "Kohaw", "chi": "湯", "icon": "🍲", "source": "食物", "audio": "kohaw.m4a"},
-    {"amis": "Mato’asay", "chi": "老人 / 長輩", "icon": "👵", "source": "人物", "audio": "matoasay.m4a"},
-]
+# ==========================================
+# 2. 核心邏輯層 (The Logic Engine)
+# ==========================================
 
-sentences = [
-    {"amis": "O maan ko kaolahan iso a sikaen?", "chi": "你喜歡什麼樣的菜呢？", "icon": "❓", "source": "問句", "audio": "sentence_01.m4a"},
-    {"amis": "O foting ko kaolahan ako a dateng.", "chi": "魚是我最喜歡的菜。", "icon": "🐟", "source": "回答", "audio": "sentence_02.m4a"},
-    {"amis": "Kaolahan no wama konini a kohaw.", "chi": "這碗是爸爸最喜歡的湯。", "icon": "👨", "source": "描述", "audio": "sentence_03.m4a"},
-    {"amis": "Tadakaolahan no mato’asay kona dateng.", "chi": "這些是老人家最喜歡的菜。", "icon": "👵", "source": "描述", "audio": "sentence_04.m4a"},
-    {"amis": "Kaolahan ako a maemin konini a sikaen.", "chi": "這些都是我最喜歡的菜餚。", "icon": "😋", "source": "感嘆", "audio": "sentence_05.m4a"},
-    {"amis": "O facidol i, o tadakaolahan haca no ’Amis.", "chi": "麵包樹果也是阿美族人最愛。", "icon": "🍈", "source": "文化", "audio": "sentence_06.m4a"},
-]
+class FractionObj:
+    """ 分數物件：封裝數值與顯示邏輯 """
+    def __init__(self, num, den, label=""):
+        self.num = num
+        self.den = den
+        self.value = num / den
+        self.label = label
+        self.id = time.time()  # 唯一標識符
 
-# --- 3. 隨機題庫 ---
-raw_quiz_pool = [
-    {
-        "q": "「麵包樹果」的阿美語怎麼說？",
-        "audio": "facidol.m4a",
-        "options": ["Facidol", "Foting", "Dateng"],
-        "ans": "Facidol",
-        "hint": "阿美族人最愛的食材之一"
-    },
-    {
-        "q": "O maan ko kaolahan iso a sikaen?",
-        "audio": "sentence_01.m4a",
-        "options": ["你喜歡什麼樣的菜呢？", "這是誰煮的菜？", "你要去哪裡買菜？"],
-        "ans": "你喜歡什麼樣的菜呢？",
-        "hint": "Maan 是「什麼」，Kaolahan 是「喜歡的」"
-    },
-    {
-        "q": "Kaolahan no wama konini a kohaw.",
-        "audio": "sentence_03.m4a",
-        "options": ["這碗是爸爸最喜歡的湯", "這碗是媽媽煮的湯", "我不喜歡喝湯"],
-        "ans": "這碗是爸爸最喜歡的湯",
-        "hint": "Wama 是爸爸，Kohaw 是湯"
-    },
-    {
-        "q": "單字測驗：Maemin",
-        "audio": "maemin.m4a",
-        "options": ["全部", "一點點", "沒有"],
-        "ans": "全部",
-        "hint": "Kaolahan ako a maemin (這些「全部」都是我喜歡的)"
-    },
-    {
-        "q": "單字測驗：Mato’asay",
-        "audio": "matoasay.m4a",
-        "options": ["老人/長輩", "小孩", "年輕人"],
-        "ans": "老人/長輩",
-        "hint": "Tadakaolahan no mato’asay (老人家最喜歡的)"
-    },
-    {
-        "q": "O foting ko kaolahan ako a dateng.",
-        "audio": "sentence_02.m4a",
-        "options": ["魚是我最喜歡的菜", "我喜歡吃麵包樹果", "這道菜很鹹"],
-        "ans": "魚是我最喜歡的菜",
-        "hint": "Foting 是魚"
-    },
-    {
-        "q": "「湯」的阿美語是？",
-        "audio": "kohaw.m4a",
-        "options": ["Kohaw", "Dateng", "Sapaiyo"],
-        "ans": "Kohaw",
-        "hint": "喝熱熱的 Kohaw"
-    }
-]
+    def __repr__(self):
+        sign = "+" if self.num > 0 else ""
+        return f"{sign}{self.num}/{self.den}"
 
-# --- 4. 狀態初始化 (洗牌邏輯) ---
-if 'init' not in st.session_state:
-    st.session_state.score = 0
-    st.session_state.current_q_idx = 0
-    st.session_state.quiz_id = str(random.randint(1000, 9999))
+def get_lcm(a, b):
+    """ 計算最小公倍數 (共振頻率) """
+    if a == 0 or b == 0: return 0
+    return abs(a * b) // math.gcd(a, b)
+
+# 初始化 Session State (狀態管理)
+if 'depth' not in st.session_state:
+    st.session_state.depth = 0.0
+if 'attachments' not in st.session_state:
+    st.session_state.attachments = [] 
+if 'feedback' not in st.session_state:
+    st.session_state.feedback = "系統就緒。等待潛航指令..."
+if 'radar_mode' not in st.session_state:
+    st.session_state.radar_mode = False
+if 'pending_obj' not in st.session_state:
+    st.session_state.pending_obj = None
+
+# ==========================================
+# 3. 互動函數 (The Actions)
+# ==========================================
+
+def add_attachment(num, den):
+    """ 嘗試掛載物件 (加法) """
+    new_obj = FractionObj(num, den)
     
-    # 抽題與洗牌
-    selected_questions = random.sample(raw_quiz_pool, 4)
-    final_questions = []
-    for q in selected_questions:
-        q_copy = q.copy()
-        shuffled_opts = random.sample(q['options'], len(q['options']))
-        q_copy['shuffled_options'] = shuffled_opts
-        final_questions.append(q_copy)
-        
-    st.session_state.quiz_questions = final_questions
-    st.session_state.init = True
+    # [衝突檢測] 檢查分母是否一致 (通分雷達邏輯)
+    if st.session_state.attachments:
+        current_den = st.session_state.attachments[0].den
+        if den != current_den:
+            # 觸發雷達模式
+            st.session_state.radar_mode = True
+            st.session_state.pending_obj = new_obj
+            st.session_state.lcm_target = get_lcm(current_den, den)
+            st.session_state.feedback = f"⚠️ 接口不合 ({current_den} vs {den})！啟動通分雷達..."
+            return
 
-# --- 5. 主介面 ---
-st.markdown("<h1 style='text-align: center; color: #BF360C;'>Kaolahan 所喜歡的</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #8D6E63;'>講師：高春美 | 教材提供者：高春美</p>", unsafe_allow_html=True)
+    # 無衝突，直接執行
+    execute_attach(new_obj)
 
-tab1, tab2 = st.tabs(["📖 詞彙與句型", "🎲 隨機挑戰"])
-
-# === Tab 1: 學習模式 ===
-with tab1:
-    st.subheader("📝 核心單字")
-    col1, col2 = st.columns(2)
-    for i, word in enumerate(vocab_data):
-        with (col1 if i % 2 == 0 else col2):
-            st.markdown(f"""
-            <div class="word-card">
-                <div class="emoji-icon">{word['icon']}</div>
-                <div class="amis-text">{word['amis']}</div>
-                <div class="chinese-text">{word['chi']}</div>
-                <div class="source-tag">{word['source']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            if st.button(f"🔊 播放", key=f"btn_vocab_{i}"):
-                play_local_audio(word['audio'])
-
-    st.markdown("---")
-    st.subheader("🗣️ 實用句型")
-    for i, sent in enumerate(sentences):
-        st.markdown(f"""
-        <div class="sentence-box">
-            <div style="font-size: 20px; color: #E65100; font-weight: bold;">{sent['icon']} {sent['amis']}</div>
-            <div style="font-size: 16px; color: #5D4037; margin-top: 5px;">{sent['chi']}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        if st.button(f"▶️ 朗讀句子", key=f"btn_sent_{i}"):
-            play_local_audio(sent['audio'])
-
-# === Tab 2: 測驗模式 ===
-with tab2:
-    st.subheader("🧠 隨機測驗 (共4題)")
+def execute_attach(obj):
+    """ 執行掛載並更新深度 """
+    st.session_state.attachments.append(obj)
+    st.session_state.depth += obj.value
     
-    current_idx = st.session_state.current_q_idx
-    questions = st.session_state.quiz_questions
-    
-    if current_idx < len(questions):
-        q_data = questions[current_idx]
-        progress = (current_idx / len(questions))
-        st.progress(progress)
-        
-        st.markdown(f"### Q{current_idx + 1}: {q_data['q']}")
-        
-        # 播放題目語音
-        if q_data.get('audio'):
-            if st.button("🔊 聽題目發音", key=f"quiz_audio_{current_idx}"):
-                play_local_audio(q_data['audio'])
-        
-        option_cols = st.columns(len(q_data['shuffled_options']))
-        
-        if f"answered_{current_idx}" not in st.session_state:
-            for idx, opt in enumerate(q_data['shuffled_options']):
-                if st.button(opt, key=f"opt_{current_idx}_{idx}"):
-                    if opt == q_data['ans']:
-                        st.session_state.score += 25
-                        st.success(f"🎉 正確！ {q_data['ans']}")
-                    else:
-                        st.error(f"❌ 答錯了，正確答案是：{q_data['ans']}")
-                        st.info(f"💡 提示：{q_data['hint']}")
-                    
-                    st.session_state[f"answered_{current_idx}"] = True
-                    time.sleep(1.5)
-                    st.session_state.current_q_idx += 1
-                    safe_rerun()
-        else:
-            st.info("載入下一題中...")
-            
+    if obj.value > 0:
+        st.session_state.feedback = f"✅ 掛載氣球 ({obj}) -> 浮力增加 -> 上浮"
     else:
-        st.progress(1.0)
-        st.balloons()
-        final_score = st.session_state.score
+        st.session_state.feedback = f"⚓ 掛載鐵錨 ({obj}) -> 負重增加 -> 下潛"
+
+def remove_attachment(idx):
+    """ 移除掛載物 (減法) - 核心物理反饋 """
+    if idx >= len(st.session_state.attachments): return
+    
+    obj = st.session_state.attachments.pop(idx)
+    st.session_state.depth -= obj.value
+    
+    # [物理反饋] 負負得正的關鍵邏輯
+    if obj.value < 0:
+        st.session_state.feedback = f"✂️ 剪斷鐵錨 ({obj})！負重消失 -> 急速上浮！ (減去負數)"
+    else:
+        st.session_state.feedback = f"💥 戳破氣球 ({obj})！浮力消失 -> 下沉！ (減去正數)"
+
+def resolve_radar():
+    """ 解決異分母衝突 (通分) """
+    lcm = st.session_state.lcm_target
+    
+    # 1. 轉換現有的所有物件
+    for obj in st.session_state.attachments:
+        if obj.den != lcm:
+            factor = lcm // obj.den
+            obj.num *= factor
+            obj.den = lcm
+    
+    # 2. 轉換待掛載的物件
+    pending = st.session_state.pending_obj
+    factor = lcm // pending.den
+    pending.num *= factor
+    pending.den = lcm
+    
+    execute_attach(pending)
+    
+    # 重置狀態
+    st.session_state.radar_mode = False
+    st.session_state.pending_obj = None
+    st.session_state.feedback = f"⚡ 頻率同步完成！統一分母為 {lcm}"
+
+def reset_game():
+    st.session_state.depth = 0.0
+    st.session_state.attachments = []
+    st.session_state.radar_mode = False
+    st.session_state.feedback = "系統重置完成。海平面深度 0。"
+
+# ==========================================
+# 4. UI 渲染層 (The View)
+# ==========================================
+
+st.title("⚓ Deep Dive: Zero-Entropy Math")
+
+# A. 狀態反饋欄 (HUD Banner)
+if "⚠️" in st.session_state.feedback:
+    st.warning(st.session_state.feedback)
+elif "✂️" in st.session_state.feedback or "💥" in st.session_state.feedback:
+    st.error(st.session_state.feedback) # 使用紅色強調物理變化
+else:
+    st.info(st.session_state.feedback)
+
+# ------------------------------------------
+# 模式 A: 通分雷達 (Resonance Radar)
+# ------------------------------------------
+if st.session_state.radar_mode:
+    st.markdown("---")
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.markdown("### ⚙️ 頻率校準")
+        st.write("檢測到異分母衝突。請調整齒輪以尋找共振頻率 (LCM)。")
         
-        st.markdown(f"""
-        <div style="text-align: center; padding: 30px; background-color: #FFF3E0; border-radius: 20px;">
-            <h2 style="color: #E64A19;">測驗完成！</h2>
-            <h1 style="font-size: 60px; color: #BF360C;">{final_score} 分</h1>
-            <p>Kaolahan iso konini a app? (你喜歡這個App嗎？)</p>
-        </div>
-        """, unsafe_allow_html=True)
+        current_den = st.session_state.attachments[0].den
+        target_den = st.session_state.pending_obj.den
+        lcm = st.session_state.lcm_target
         
-        if st.button("🔄 再玩一次"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            safe_rerun()
+        st.metric("系統頻率", f"1 / {current_den}")
+        st.metric("目標頻率", f"1 / {target_den}")
+
+    with col2:
+        # 互動滑桿
+        st.write(f"### 尋找目標: {lcm}")
+        slider_val = st.slider("旋轉齒輪", min_value=1, max_value=lcm + 5, value=1)
+        
+        if slider_val == lcm:
+            st.success(f"✨ 共振鎖定！ (LCM = {lcm})")
+            if st.button(">> 執行同步與掛載 <<", type="primary"):
+                resolve_radar()
+                st.rerun()
+        elif slider_val % current_den == 0 and slider_val % target_den == 0:
+             st.info("這是公倍數，但不是最小的... 再試試！")
+        else:
+            st.caption("拖動滑桿直到鎖定...")
+
+# ------------------------------------------
+# 模式 B: 深海戰情室 (Dashboard)
+# ------------------------------------------
+else:
+    # 1. 深海儀表板 (Plotly Visualization)
+    fig = go.Figure()
+
+    # 海平面
+    fig.add_hline(y=0, line_dash="dash", line_color="cyan", annotation_text="海平面 (0)")
+
+    # 潛艇位置
+    depth = st.session_state.depth
+    fig.add_trace(go.Scatter(
+        x=[0], y=[depth],
+        mode='markers+text',
+        marker=dict(size=50, color='#FFD700', symbol='diamond', line=dict(width=2, color='white')),
+        text=['🚁<br>Sub'],
+        textposition="middle right",
+        textfont=dict(color="#FFD700", size=14),
+        name='Submarine'
+    ))
+
+    # 視覺化氣球與鐵錨
+    for i, obj in enumerate(st.session_state.attachments):
+        is_balloon = obj.value > 0
+        color = "#00FF00" if is_balloon else "#FF4500" # 螢光綠 vs 橘紅
+        symbol = "circle" if is_balloon else "triangle-down"
+        
+        # 簡單堆疊顯示，避免重疊
+        offset = (i + 1) * 0.8
+        y_pos = depth + offset if is_balloon else depth - offset
+        
+        # 連接線
+        fig.add_trace(go.Scatter(
+            x=[0, 0], y=[depth, y_pos],
+            mode='lines',
+            line=dict(color='white', width=1, dash='dot'),
+            hoverinfo='skip'
+        ))
+
+        # 物件本體
+        fig.add_trace(go.Scatter(
+            x=[0], y=[y_pos],
+            mode='markers+text',
+            marker=dict(size=25, color=color, line=dict(width=1, color='white')),
+            text=[f"{abs(obj.num)}/{obj.den}"],
+            textposition="middle left",
+            textfont=dict(color="white", weight="bold"),
+            hoverinfo='text',
+            hovertext=f"物件 ID: {i+1} | 數值: {obj.value}"
+        ))
+
+    # 圖表佈局設定
+    fig.update_layout(
+        title=dict(text="深海探測儀 (Depth Gauge)", font=dict(color="#4CC9F0")),
+        yaxis=dict(range=[-8, 8], title="深度", gridcolor="rgba(255,255,255,0.1)", zeroline=False),
+        xaxis=dict(showgrid=False, showticklabels=False, range=[-1, 1]),
+        height=450,
+        margin=dict(l=20, r=20, t=40, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 2. 戰術控制台 (Control Panel)
+    st.markdown("### 🎮 戰術控制台")
+    
+    tab1, tab2 = st.tabs(["➕ 掛載裝備 (加法)", "✂️ 移除裝備 (減法)"])
+    
+    with tab1:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("##### 🎈 氣球 (正數)")
+            if st.button("加 1/2"): add_attachment(1, 2); st.rerun()
+            if st.button("加 1/3"): add_attachment(1, 3); st.rerun()
+            if st.button("加 1/4"): add_attachment(1, 4); st.rerun()
+        with col_b:
+            st.markdown("##### ⚓ 鐵錨 (負數)")
+            if st.button("加 -1/2"): add_attachment(-1, 2); st.rerun()
+            if st.button("加 -1/3"): add_attachment(-1, 3); st.rerun()
+            if st.button("加 -1/4"): add_attachment(-1, 4); st.rerun()
+
+    with tab2:
+        if not st.session_state.attachments:
+            st.info("潛艇目前無掛載物")
+        else:
+            st.write("點擊按鈕以執行減法 (剪斷繩索)：")
+            # 為了版面整潔，每行顯示 3 個移除按鈕
+            cols = st.columns(3)
+            for i, obj in enumerate(st.session_state.attachments):
+                with cols[i % 3]:
+                    label = f"✂️ {obj}"
+                    # 根據正負給予不同樣式提示
+                    help_text = "剪斷氣球 (下沉)" if obj.value > 0 else "剪斷鐵錨 (上浮)"
+                    if st.button(label, key=f"del_{obj.id}", help=help_text):
+                        remove_attachment(i)
+                        st.rerun()
+
+    # 重置按鈕
+    st.markdown("---")
+    if st.button("🔄 重置系統 (Reset System)"):
+        reset_game()
+        st.rerun()
+
+    # 3. 數學黑盒子 (Debug Data)
+    with st.expander("📊 數學黑盒子 (Math Data Stream)"):
+        st.metric("當前深度", f"{st.session_state.depth:.4f}")
+        st.write("掛載序列:", [str(x) for x in st.session_state.attachments])
