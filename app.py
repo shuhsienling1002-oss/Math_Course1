@@ -95,10 +95,15 @@ st.markdown("""
         color: #f9e2af;
         margin-bottom: 5px;
         display: block;
+        font-size: 1.1rem;
     }
     .math-list {
         margin: 5px 0 15px 20px;
         padding: 0;
+    }
+    /* 讓 MathJax 公式有足夠空間 */
+    .katex-display {
+        margin: 10px 0 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -125,12 +130,11 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 渲染修復版 v2.3
+# 3. 核心引擎 (Game Engine) - 縮排修正版 v2.4
 # ==========================================
 
 class GameEngine:
     def __init__(self):
-        # 新增 math_log 用於存儲獨立的 HTML 內容
         required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback_header', 'math_log', 'correct_hand_cache']
         if any(key not in st.session_state for key in required_keys):
             self.reset_game()
@@ -147,8 +151,6 @@ class GameEngine:
     def message(self): return st.session_state.get('msg', "系統載入中...")
     @property
     def state(self): return st.session_state.get('game_state', 'playing')
-    
-    # 將標題與內容分開
     @property
     def feedback_header(self): return st.session_state.get('feedback_header', "")
     @property
@@ -229,7 +231,6 @@ class GameEngine:
     def _trigger_end_game(self, status):
         st.session_state.game_state = 'won' if status == 'won' else 'lost'
         
-        # 1. 設定短標題 (用於 st.success/error)
         if status == 'won':
             st.session_state.msg = "🎉 完美平衡！"
             st.session_state.feedback_header = "✅ 驗算成功！你找到了正確的組合。"
@@ -240,12 +241,12 @@ class GameEngine:
             st.session_state.msg = "💀 資源耗盡！"
             st.session_state.feedback_header = "❌ 誤差分析：手牌用盡但未達目標。"
 
-        # 2. 生成詳細 HTML (用於 st.markdown)
         st.session_state.math_log = self._generate_step_by_step_solution(st.session_state.correct_hand_cache)
 
     def _generate_step_by_step_solution(self, cards: List[Card]) -> str:
         """
-        生成 HTML 格式的解題步驟，使用 <ul> <li> 確保排版整潔
+        生成 HTML 格式的解題步驟
+        關鍵修正：移除所有 f-string 內部的縮排，防止 Markdown 誤判為代碼區塊
         """
         if not cards: return "無解"
         
@@ -270,33 +271,34 @@ class GameEngine:
             
             numerators_sum_str.append(str(expanded_num))
             
-        # 構建 HTML 字串
+        # 注意：這裡的 HTML 字串全部靠左對齊，不要縮排！
         html = f"""
-        <div class="math-steps">
-            <span class="math-step-title">Step 1: 尋找公分母</span>
-            <div style="margin-left: 20px;">
-                分母 {denoms} 的最小公倍數是 <b>{lcm}</b>。
-            </div>
-            <br>
-            <span class="math-step-title">Step 2: 通分變形</span>
-            <ul class="math-list">
-                {expansion_items}
-            </ul>
-            <span class="math-step-title">Step 3: 分子加總</span>
-            <div style="margin-left: 20px;">
-                $$ \\frac{{{' + '.join(numerators_sum_str)}}}{{{lcm}}} = \\frac{{{total_numerator}}}{{{lcm}}} $$
-            </div>
-        """
+<div class="math-steps">
+<span class="math-step-title">Step 1: 尋找公分母</span>
+<div style="margin-left: 20px;">
+分母 {denoms} 的最小公倍數是 <b>{lcm}</b>。
+</div>
+<br>
+<span class="math-step-title">Step 2: 通分變形</span>
+<ul class="math-list">
+{expansion_items}
+</ul>
+<span class="math-step-title">Step 3: 分子加總</span>
+<div style="margin-left: 20px;">
+$$ \\frac{{{' + '.join(numerators_sum_str)}}}{{{lcm}}} = \\frac{{{total_numerator}}}{{{lcm}}} $$
+</div>
+"""
         
         final_frac = Fraction(total_numerator, lcm)
         if final_frac.denominator != lcm:
+            # 這裡也必須靠左對齊，不能因為在 if 裡面就縮排
             html += f"""
-            <br>
-            <span class="math-step-title">Step 4: 約分 (最終答案)</span>
-            <div style="margin-left: 20px;">
-                $$ \\frac{{{total_numerator}}}{{{lcm}}} = {final_frac.numerator}/{final_frac.denominator} $$
-            </div>
-            """
+<br>
+<span class="math-step-title">Step 4: 約分 (最終答案)</span>
+<div style="margin-left: 20px;">
+$$ \\frac{{{total_numerator}}}{{{lcm}}} = {final_frac.numerator}/{final_frac.denominator} $$
+</div>
+"""
         
         html += "</div>"
         return html
@@ -357,15 +359,13 @@ else:
     # --- 遊戲結束結算區 ---
     st.markdown("---")
     
-    # [關鍵修正]：分開渲染
-    # 1. 顯示簡單的狀態條 (Success/Error Box)
+    # 1. 狀態條
     if engine.state == 'won':
         st.success(engine.feedback_header)
     else:
         st.error(engine.feedback_header)
     
-    # 2. 顯示複雜的數學推導 (HTML Renderer)
-    # 這裡使用 unsafe_allow_html=True 才能正確顯示 <div> 和 <ul>
+    # 2. 數學推導
     st.markdown(engine.math_log, unsafe_allow_html=True)
     
     # 操作按鈕
