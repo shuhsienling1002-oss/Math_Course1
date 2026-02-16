@@ -101,9 +101,16 @@ st.markdown("""
         margin: 5px 0 15px 20px;
         padding: 0;
     }
-    /* 讓 MathJax 公式有足夠空間 */
-    .katex-display {
-        margin: 10px 0 !important;
+    /* 結果高亮 */
+    .result-box {
+        background: #45475a;
+        padding: 10px 15px;
+        border-radius: 8px;
+        display: inline-block;
+        font-weight: bold;
+        color: #a6e3a1;
+        font-size: 1.2rem;
+        margin-top: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -130,7 +137,7 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 縮排修正版 v2.4
+# 3. 核心引擎 (Game Engine) - 人類直覺版 v2.5
 # ==========================================
 
 class GameEngine:
@@ -246,7 +253,7 @@ class GameEngine:
     def _generate_step_by_step_solution(self, cards: List[Card]) -> str:
         """
         生成 HTML 格式的解題步驟
-        關鍵修正：移除所有 f-string 內部的縮排，防止 Markdown 誤判為代碼區塊
+        v2.5 更新：移除 LaTeX，改用直觀的橫式算式
         """
         if not cards: return "無解"
         
@@ -271,7 +278,7 @@ class GameEngine:
             
             numerators_sum_str.append(str(expanded_num))
             
-        # 注意：這裡的 HTML 字串全部靠左對齊，不要縮排！
+        # 構建 HTML 字串 (注意：無縮排)
         html = f"""
 <div class="math-steps">
 <span class="math-step-title">Step 1: 尋找公分母</span>
@@ -285,18 +292,21 @@ class GameEngine:
 </ul>
 <span class="math-step-title">Step 3: 分子加總</span>
 <div style="margin-left: 20px;">
-$$ \\frac{{{' + '.join(numerators_sum_str)}}}{{{lcm}}} = \\frac{{{total_numerator}}}{{{lcm}}} $$
+<div class="result-box">
+( {' + '.join(numerators_sum_str)} ) ÷ {lcm} = {total_numerator}/{lcm}
+</div>
 </div>
 """
         
         final_frac = Fraction(total_numerator, lcm)
         if final_frac.denominator != lcm:
-            # 這裡也必須靠左對齊，不能因為在 if 裡面就縮排
             html += f"""
 <br>
 <span class="math-step-title">Step 4: 約分 (最終答案)</span>
 <div style="margin-left: 20px;">
-$$ \\frac{{{total_numerator}}}{{{lcm}}} = {final_frac.numerator}/{final_frac.denominator} $$
+<div class="result-box">
+{total_numerator}/{lcm} = {final_frac.numerator}/{final_frac.denominator}
+</div>
 </div>
 """
         
