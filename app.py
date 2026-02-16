@@ -4,61 +4,40 @@ import math
 import random
 
 # ==========================================
-# 1. 遊戲設定與 CSS (Game Config)
+# 1. 遊戲設定與 CSS
 # ==========================================
 st.set_page_config(page_title="Fraction Hunter", page_icon="🏹", layout="centered")
 
-# 修正重點说明：
-# 1. div.stButton > button p: 強制設定按鈕內文字顏色為深色 (覆蓋 Streamlit 深色模式預設的白色)
-# 2. HTML 字串全部向左對齊，沒有任何縮排 (解決代碼外露問題)
-
 st.markdown("""
 <style>
-    /* 全局背景設定：深藍色 */
     .stApp {
         background-color: #2b2d42;
         color: white;
     }
-    
-    /* --- 核彈級按鈕修復 --- */
-    /* 針對按鈕容器 */
     div.stButton > button {
-        background: linear-gradient(to bottom, #ffffff 0%, #e0e0e0 100%) !important; /* 強制白/灰漸層背景 */
+        background: linear-gradient(to bottom, #ffffff 0%, #e0e0e0 100%) !important;
         border: 2px solid #ffffff !important;
         border-radius: 12px !important;
         padding: 10px 0px !important;
         transition: all 0.2s ease !important;
-        box-shadow: 0 4px 0 #999 !important; /* 增加立體感 */
+        box-shadow: 0 4px 0 #999 !important;
     }
-
-    /* 針對按鈕內的文字 (關鍵修復点) */
     div.stButton > button p {
-        color: #2b2d42 !important; /* 強制深藍色文字 */
+        color: #2b2d42 !important;
         font-size: 24px !important;
         font-weight: 900 !important;
         margin: 0 !important;
     }
-    
-    /* 針對按鈕內的 Emoji 或其他元素 */
-    div.stButton > button * {
-        color: #2b2d42 !important;
-    }
-
-    /* 按鈕懸停效果 */
     div.stButton > button:hover {
         transform: translateY(2px) !important;
         box-shadow: 0 2px 0 #666 !important;
-        background: #ffecd1 !important; /* 懸停變淡黃色 */
+        background: #ffecd1 !important;
         border-color: #ef233c !important;
     }
-    
-    /* 按鈕點擊效果 */
     div.stButton > button:active {
         transform: translateY(4px) !important;
         box-shadow: none !important;
     }
-
-    /* 隱藏 Streamlit 選單 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
@@ -66,15 +45,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 遊戲邏輯 (Game Logic)
+# 2. 遊戲邏輯 (修正核心數學錯誤)
 # ==========================================
 
 class FractionCard:
     def __init__(self, num, den):
         self.num = num
         self.den = den
-        self.value = num / den
         self.id = random.randint(1000, 9999)
+
+    # 🚨 關鍵修正：將 value 變成動態屬性
+    # 這樣每次分子分母改變時，數值才會跟著變！
+    @property
+    def value(self):
+        return self.num / self.den
 
     def __repr__(self):
         return f"{self.num}/{self.den}"
@@ -93,14 +77,15 @@ if 'message' not in st.session_state: st.session_state.message = "🎮 第一關
 def next_level():
     st.session_state.level += 1
     den = random.choice([4, 6, 8, 12])
-    target_num = random.randint(1, den-1)
+    # 確保目標不為 0 且小於 2 (避免太難)
+    target_num = random.randint(1, int(den * 1.5))
     st.session_state.target = FractionCard(target_num, den)
     st.session_state.current = FractionCard(0, den)
     
     new_hand = []
-    for _ in range(3):
-        h_den = random.choice([2, 3, 4])
-        h_num = random.choice([1, -1])
+    for _ in range(4): # 給 4 張牌比較好過關
+        h_den = random.choice([2, 3, 4, 6])
+        h_num = random.choice([1, 1, -1]) # 多一點正數
         new_hand.append(FractionCard(h_num, h_den))
     
     st.session_state.hand = new_hand
@@ -111,40 +96,44 @@ def play_card(idx):
     card = st.session_state.hand[idx]
     current = st.session_state.current
     
+    # 通分邏輯 (魔法融合)
     if card.den != current.den:
         common_den = lcm(card.den, current.den)
-        st.session_state.message = f"⚡ 魔法融合！ {card.den} 和 {current.den} 變成了 {common_den}"
+        st.session_state.message = f"⚡ 魔法融合！分母統一為 {common_den}"
         
-        factor_c = common_den // current.den
-        current.num *= factor_c
+        # 更新當前位置的分母
+        factor_curr = common_den // current.den
+        current.num *= factor_curr
         current.den = common_den
         
+        # 更新所有手牌的分母
         for c in st.session_state.hand:
-            f = common_den // c.den
-            c.num *= f
-            c.den = common_den
+            # 只有當分母不同時才更新，避免重複乘
+            if c.den != common_den:
+                factor_c = common_den // c.den
+                c.num *= factor_c
+                c.den = common_den
             
-        time.sleep(0.5)
+        time.sleep(0.3)
         st.rerun()
         return
 
+    # 正常出牌邏輯
     st.session_state.hand.pop(idx)
-    st.session_state.current.num += card.num
+    st.session_state.current.num += card.num # 直接加分子
+    
+    # 這裡不需要手動更新 value，因為 @property 會自動算
     check_win()
 
 def check_win():
-    curr = st.session_state.current
-    tgt = st.session_state.target
-    
-    common = lcm(curr.den, tgt.den)
-    curr_val = curr.num * (common // curr.den)
-    tgt_val = tgt.num * (common // tgt.den)
-    
-    if curr_val == tgt_val:
+    # 判斷勝利 (容許極小誤差，雖然整數運算應該無誤差)
+    if abs(st.session_state.current.value - st.session_state.target.value) < 0.0001:
         st.session_state.message = "🎉 捕獲成功！"
         next_level()
     elif len(st.session_state.hand) == 0:
         st.session_state.message = "💀 沒牌了... (按重置)"
+    else:
+        st.session_state.message = "🚀 飛行中..."
 
 def reset_game():
     st.session_state.level = 1
@@ -154,62 +143,68 @@ def reset_game():
     st.session_state.message = "🔄 遊戲重置"
 
 # ==========================================
-# 3. UI 渲染 (The View)
+# 3. UI 渲染
 # ==========================================
 
 st.title(f"🏹 分數獵人 Level {st.session_state.level}")
 
 st.info(st.session_state.message)
 
+# 取得動態計算的數值
 curr_val = st.session_state.current.value
 tgt_val = st.session_state.target.value
 
-# 計算 CSS 位置 (限制在 0% - 100%)
-# 假設戰場總長度代表數值 0 到 1.5 (為了讓畫面好從寬)
-scale_factor = 1.2 
-pos_tgt = min(max(tgt_val / scale_factor * 100, 5), 95)
-pos_curr = min(max(curr_val / scale_factor * 100, 5), 95)
+# 視覺化縮放 (讓 0~2 的範圍填滿進度條)
+scale = 2.0 
+pos_tgt = min(max(tgt_val / scale * 100, 2), 98)
+pos_curr = min(max(curr_val / scale * 100, 2), 98)
 
-# --- 修正重點：這裡的 HTML 完全沒有縮排，貼齊最左邊 ---
+# 戰場顯示
 st.markdown(f"""
-<div style="position: relative; width: 100%; height: 100px; background-color: #353b48; border-radius: 15px; margin: 40px 0; border: 3px solid #7f8fa6; box-shadow: inset 0 0 20px #000;">
-<div style="position: absolute; left: {pos_tgt}%; top: 15px; transform: translateX(-50%); text-align: center; z-index: 1;">
-<div style="font-size: 30px; line-height: 1;">🚩</div>
-<div style="color: #ff6b6b; font-weight: bold; font-size: 18px; background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 6px; margin-top: 5px;">{st.session_state.target}</div>
+<div style="position: relative; width: 100%; height: 120px; background-color: #353b48; border-radius: 15px; margin: 20px 0; border: 3px solid #7f8fa6; overflow: hidden;">
+    <div style="position: absolute; width: 100%; height: 100%; background: repeating-linear-gradient(90deg, transparent, transparent 19%, #444 20%); opacity: 0.3;"></div>
+    
+    <div style="position: absolute; bottom: 5px; left: 10px; color: #aaa; font-size: 12px;">0</div>
+    <div style="position: absolute; bottom: 5px; right: 10px; color: #aaa; font-size: 12px;">2.0</div>
+
+    <div style="position: absolute; left: {pos_tgt}%; top: 20px; transform: translateX(-50%); text-align: center; z-index: 1;">
+        <div style="font-size: 30px; line-height: 1;">🚩</div>
+        <div style="background: rgba(239, 35, 60, 0.8); color: white; padding: 2px 6px; border-radius: 4px; font-size: 14px; margin-top: 5px;">
+            {st.session_state.target}
+        </div>
+    </div>
+    
+    <div style="position: absolute; left: {pos_curr}%; top: 60px; transition: left 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform: translateX(-50%); z-index: 2; text-align: center;">
+        <div style="font-size: 40px; filter: drop-shadow(0 0 10px #4cd137); transform: rotate(90deg);">🚀</div>
+    </div>
 </div>
-<div style="position: absolute; left: {pos_curr}%; top: 40px; transition: left 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform: translateX(-50%); z-index: 2;">
-<div style="font-size: 50px; filter: drop-shadow(0 0 10px #4cd137);">🚀</div>
-</div>
-<div style="position: absolute; bottom: 5px; left: 10px; color: #7f8fa6; font-size: 12px;">Start (0)</div>
-<div style="position: absolute; bottom: 5px; right: 10px; color: #7f8fa6; font-size: 12px;">End ({scale_factor})</div>
-</div>
-<div style="text-align: center; font-size: 20px; margin-bottom: 20px;">
-當前位置: <span style="color: #4cd137; font-weight: bold; font-size: 28px;">{st.session_state.current}</span>
+
+<div style="text-align: center; margin-bottom: 20px;">
+    <span style="color: #bbb; font-size: 18px;">當前位置: </span>
+    <span style="color: #4cd137; font-weight: bold; font-size: 32px;">{st.session_state.current}</span>
 </div>
 """, unsafe_allow_html=True)
 
-st.write("### 🃏 你的手牌 (點擊出牌)")
+st.write("### 🃏 你的手牌")
 
 if not st.session_state.hand:
-    if st.session_state.message != "🎉 捕獲成功！":
+    if "成功" not in st.session_state.message:
         st.error("任務失敗！")
         if st.button("🔄 重來"):
             reset_game()
             st.rerun()
 else:
-    # 增加手牌間距
     cols = st.columns(len(st.session_state.hand))
     for i, card in enumerate(st.session_state.hand):
         with cols[i]:
             is_diff = card.den != st.session_state.current.den
             
-            # 按鈕文字內容
             if is_diff:
                 label = f"{card.num}/{card.den}\n⚡"
-                help_txt = "點擊進行通分"
+                help_txt = "分母不同！點擊通分"
             else:
                 label = f"{card.num}/{card.den}"
-                help_txt = "出牌"
+                help_txt = "移動"
 
             if st.button(label, key=f"card_{card.id}", help=help_txt, use_container_width=True):
                 play_card(i)
@@ -217,8 +212,8 @@ else:
 
 with st.expander("📖 玩法說明"):
     st.markdown("""
-    1. **目標**：讓火箭 🚀 飛到旗幟 🚩 的位置。
-    2. **出牌**：點擊下方的白色卡片。
-    3. **⚡ 閃電符號**：表示這張牌的分母跟目前位置不一樣。點擊它會自動發動 **「通分魔法」**！
-    4. **負數**：分子是負數（例如 -1/4）會讓火箭往回飛。
+    1. **目標**：讓火箭 🚀 與旗幟 🚩 的位置數字一樣。
+    2. **出牌**：點擊卡片，把分數加到你的位置上。
+    3. **⚡ 閃電**：如果分母不同，必須先點擊卡片進行「通分融合」。
+    4. **技巧**：小心不要飛過頭！負數卡片可以讓你往回飛。
     """)
