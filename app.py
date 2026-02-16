@@ -7,7 +7,7 @@ from typing import List, Tuple
 # ==========================================
 # 1. 頁面設定與 CSS (View Layer)
 # ==========================================
-st.set_page_config(page_title="Zero-Entropy Fraction", page_icon="🧩", layout="centered")
+st.set_page_config(page_title="零熵分數挑戰", page_icon="🧩", layout="centered")
 
 st.markdown("""
 <style>
@@ -102,7 +102,7 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 已修復防呆機制
+# 3. 核心引擎 (Game Engine) - 防呆機制 v2
 # ==========================================
 
 class GameEngine:
@@ -114,10 +114,11 @@ class GameEngine:
     def __init__(self):
         # 初始化檢查：如果 session_state 缺少關鍵變數，強制重置
         required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state']
+        # 使用更嚴格的檢查，如果缺少任何一個 key 就重置
         if any(key not in st.session_state for key in required_keys):
             self.reset_game()
     
-    # 使用 .get() 確保安全讀取，防止 AttributeError
+    # 所有的屬性讀取都使用 .get()，這是防止紅字錯誤的關鍵
     @property
     def level(self): return st.session_state.get('level', 1)
     
@@ -134,7 +135,7 @@ class GameEngine:
     def message(self): return st.session_state.get('msg', "系統載入中...")
     
     @property
-    def state(self): return st.session_state.get('game_state', 'playing') # 'playing', 'won', 'lost'
+    def state(self): return st.session_state.get('game_state', 'playing')
 
     def reset_game(self):
         st.session_state.level = 1
@@ -147,20 +148,19 @@ class GameEngine:
         st.session_state.current = start_val
         st.session_state.hand = hand
         st.session_state.game_state = 'playing'
-        st.session_state.msg = f"⚔️ Level {level}: 尋找平衡點！"
+        st.session_state.msg = f"⚔️ 第 {level} 關: 尋找平衡點！"
 
     def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card]]:
         """
         生成關卡數據 (Procedural Generation)
-        依據難度曲線 (Progression) 動態生成
         """
-        # 難度設定 (Complexity Thresholds)
+        # 難度設定
         if level == 1: den_pool = [2, 4]
         elif level == 2: den_pool = [2, 3, 4, 6]
         elif level <= 5: den_pool = [2, 3, 4, 5, 8]
-        else: den_pool = [3, 6, 7, 9, 12] # 高難度
+        else: den_pool = [3, 6, 7, 9, 12]
 
-        # 1. 建構正確路徑 (The Happy Path)
+        # 1. 建構正確路徑
         target_val = Fraction(0, 1)
         correct_hand = []
         steps = random.randint(2, 3 + (level // 3))
@@ -176,12 +176,12 @@ class GameEngine:
         target = target_val
         current = Fraction(0, 1)
 
-        # 2. 注入熵 (Entropy Injection) - 干擾牌
+        # 2. 注入熵 (干擾牌)
         distractor_count = random.randint(1, 2)
         distractors = []
         for _ in range(distractor_count):
             d = random.choice(den_pool)
-            n = random.choice([1, 2]) # 故意放正數，讓玩家容易爆掉
+            n = random.choice([1, 2])
             distractors.append(Card(n, d))
             
         final_hand = correct_hand + distractors
@@ -192,14 +192,14 @@ class GameEngine:
     def play_card(self, card_idx: int):
         if self.state != 'playing': return
         
-        # 安全檢查：確保索引有效
-        if not st.session_state.hand or card_idx >= len(st.session_state.hand):
+        # 安全檢查
+        if not st.session_state.get('hand') or card_idx >= len(st.session_state.hand):
             return
 
         card = st.session_state.hand.pop(card_idx)
         st.session_state.current += card.value
         
-        # 觸發回饋迴路 (Feedback Loop)
+        # 觸發回饋迴路
         self._check_win_condition()
 
     def _check_win_condition(self):
@@ -211,12 +211,11 @@ class GameEngine:
             st.session_state.msg = "🎉 完美平衡！(Perfect Equilibrium)"
         elif curr > tgt:
             st.session_state.game_state = 'lost'
-            st.session_state.msg = "💥 能量過載！你超過了目標值 (Entropy Overload)"
+            st.session_state.msg = "💥 能量過載！超過目標值了"
         elif not st.session_state.get('hand', []):
             st.session_state.game_state = 'lost'
-            st.session_state.msg = "💀 資源耗盡！沒有手牌了 (Resource Depletion)"
+            st.session_state.msg = "💀 資源耗盡！手牌用光了"
         else:
-            # 計算剩餘距離，給予提示
             diff = tgt - curr
             st.session_state.msg = f"🚀 推進中... 還差 {diff}"
 
@@ -233,35 +232,34 @@ class GameEngine:
 # 初始化引擎
 engine = GameEngine()
 
-st.title(f"🧩 Zero-Entropy Fraction")
+st.title(f"🧩 零熵分數挑戰")
 st.markdown(f"<div class='status-msg'>{engine.message}</div>", unsafe_allow_html=True)
 
 # 1. 視覺化軌道 (Visual Feedback Loop)
-# 將分數轉換為百分比 (假設最大值為 Target * 1.5 以保留溢出空間)
-# 防止除以零錯誤
+# 計算百分比
 target_val = engine.target if engine.target > 0 else Fraction(1, 1)
 max_val = max(target_val * Fraction(3, 2), Fraction(2, 1)) 
 
 curr_pct = min((engine.current / max_val) * 100, 100)
 tgt_pct = (engine.target / max_val) * 100
 
-st.markdown(f"""
+# 修正：移除縮排以避免被誤判為程式碼區塊
+html_content = f"""
 <div class="game-container">
-    <div style="display: flex; justify-content: space-between; font-family: monospace;">
-        <span>🏁 START: 0</span>
-        <span>🚩 TARGET: {engine.target}</span>
-    </div>
-    
-    <div class="progress-track">
-        <div class="target-marker" style="left: {float(tgt_pct)}%;"></div>
-        <div class="progress-fill" style="width: {float(curr_pct)}%;"></div>
-    </div>
-    
-    <div style="text-align: center; font-size: 24px; font-weight: bold;">
-        當前總和: <span style="color: #89b4fa;">{engine.current}</span>
-    </div>
+<div style="display: flex; justify-content: space-between; font-family: monospace;">
+<span>🏁 起點: 0</span>
+<span>🚩 目標: {engine.target}</span>
 </div>
-""", unsafe_allow_html=True)
+<div class="progress-track">
+<div class="target-marker" style="left: {float(tgt_pct)}%;"></div>
+<div class="progress-fill" style="width: {float(curr_pct)}%;"></div>
+</div>
+<div style="text-align: center; font-size: 24px; font-weight: bold;">
+當前總和: <span style="color: #89b4fa;">{engine.current}</span>
+</div>
+</div>
+"""
+st.markdown(html_content, unsafe_allow_html=True)
 
 # 2. 手牌區 (Interaction Layer)
 st.write("### 🎴 你的策略手牌")
@@ -271,26 +269,25 @@ if engine.state == 'playing':
         cols = st.columns(len(engine.hand))
         for i, card in enumerate(engine.hand):
             with cols[i]:
-                # Tooltip 顯示小數值，輔助決策
                 if st.button(f"{card.display}", key=f"btn_{card.id}", help=f"值約為 {float(card.value):.2f}"):
                     engine.play_card(i)
                     st.rerun()
     else:
         st.info("手牌已空")
 else:
-    # 遊戲結束狀態處理
+    # 遊戲結束按鈕
     result_col1, result_col2 = st.columns(2)
     with result_col1:
         if engine.state == 'won':
-            if st.button("🚀 下一關 (Next Level)", type="primary", use_container_width=True):
+            if st.button("🚀 下一關", type="primary", use_container_width=True):
                 engine.next_level()
                 st.rerun()
         else:
-            if st.button("🔄 再試一次 (Retry)", type="secondary", use_container_width=True):
+            if st.button("🔄 再試一次", type="secondary", use_container_width=True):
                 engine.retry_level()
                 st.rerun()
 
-# 3. 側邊欄與說明 (Meta Info)
+# 3. 側邊欄與說明
 with st.sidebar:
     st.markdown("### 📊 遊戲數據")
     st.write(f"當前關卡: **{engine.level}**")
@@ -299,7 +296,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     **玩法說明 (Zero-Entropy):**
-    1. **目標**: 讓藍色進度條剛好停在紅線上。
+    1. **目標**: 讓藍色進度條剛好停在粉紅線上。
     2. **陷阱**: 手牌中混有「雜訊牌」，全部打出會爆掉！
     3. **策略**: 計算並選擇正確的組合 (納什均衡)。
     """)
