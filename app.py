@@ -2,41 +2,49 @@ import streamlit as st
 import time
 import math
 import random
-import textwrap  # 🧹 引入清潔工，專門處理 HTML 縮排問題
 
 # ==========================================
 # 1. 遊戲設定與 CSS
 # ==========================================
 st.set_page_config(page_title="Fraction Hunter", page_icon="🏹", layout="centered")
 
-# 強制 CSS 修復，確保按鈕可見性與背景
+# CSS 修復：針對 Streamlit 不同版本的 DOM 結構進行全面覆蓋
 st.markdown("""
 <style>
     .stApp {
         background-color: #2b2d42;
         color: white;
     }
+    
+    /* 按鈕容器 */
     div.stButton > button {
-        background: linear-gradient(to bottom, #ffffff 0%, #e0e0e0 100%) !important;
+        background: linear-gradient(to bottom, #ffffff 0%, #f1f1f1 100%) !important;
         border: 2px solid #ffffff !important;
         border-radius: 12px !important;
         padding: 12px 0px !important;
-        transition: all 0.2s ease !important;
         box-shadow: 0 4px 0 #999 !important;
+        width: 100%;
     }
-    div.stButton > button p {
-        color: #000000 !important;
-        font-size: 22px !important;
+
+    /* 🚨 核彈級修復：強制所有按鈕內的文字變成黑色 */
+    div.stButton > button, 
+    div.stButton > button p, 
+    div.stButton > button div,
+    div.stButton > button span {
+        color: #000000 !important; 
+        font-family: sans-serif !important;
         font-weight: 800 !important;
-        margin: 0 !important;
+        font-size: 22px !important;
     }
+
+    /* 懸停效果 */
     div.stButton > button:hover {
         transform: translateY(2px) !important;
         box-shadow: 0 2px 0 #666 !important;
         background: #ffecd1 !important;
         border-color: #ef233c !important;
     }
-    /* 隱藏選單 */
+    
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
@@ -65,7 +73,6 @@ def lcm(a, b): return abs(a * b) // gcd(a, b)
 
 # 初始化狀態
 if 'level' not in st.session_state: st.session_state.level = 1
-# 預設第一關數據 (簡單的 1/2 + 1/4 = 3/4)
 if 'target' not in st.session_state: st.session_state.target = FractionCard(3, 4)
 if 'current' not in st.session_state: st.session_state.current = FractionCard(0, 4)
 if 'hand' not in st.session_state: 
@@ -73,12 +80,7 @@ if 'hand' not in st.session_state:
 if 'message' not in st.session_state: st.session_state.message = "🎮 第一關：把手牌全打出去！"
 
 def generate_level_data(level):
-    """
-    🛡️ 倒推生成法 (Backwards Generation)
-    原理：先生成手牌，算出手牌的總和，再把這個總和設為目標。
-    結果：玩家只要打完所有手牌，一定能贏。
-    """
-    # 難度池
+    # 倒推生成法：先發牌，再算目標
     if level == 1: den_pool = [2, 4]
     elif level == 2: den_pool = [3, 6]
     elif level == 3: den_pool = [4, 8, 2]
@@ -86,35 +88,28 @@ def generate_level_data(level):
 
     hand = []
     total_num = 0
-    # 統一分母計算目標，避免浮點數誤差
-    # 假設我們用一個超大公倍數來計算真值，例如 24
-    common_base = 24 
+    common_base = 24 # 用於統一計算的基數
     
-    # 生成 3-5 張牌
     card_count = random.randint(3, 5)
     
     for _ in range(card_count):
         den = random.choice(den_pool)
-        # 限制分子，避免數字太大
         num = random.choice([1, 1, 2, -1]) 
         
-        # 修正：確保不會讓總和變成負數
+        # 防止總和變負
         current_val = total_num / common_base
         if current_val + (num/den) < 0:
-            num = 1 # 強制轉正
+            num = 1 
             
         hand.append(FractionCard(num, den))
         
-        # 累加到目標值 (換算成 common_base)
         factor = common_base // den
         total_num += num * factor
 
-    # 創建目標卡片 (約分後)
+    # 計算目標
     target_gcd = gcd(total_num, common_base)
     target = FractionCard(total_num // target_gcd, common_base // target_gcd)
-    
-    # 創建起點 (0)
-    current = FractionCard(0, target.den) # 分母對齊目標比較好看
+    current = FractionCard(0, target.den) 
     
     random.shuffle(hand)
     return target, current, hand
@@ -137,12 +132,10 @@ def play_card(idx):
         common_den = lcm(card.den, current.den)
         st.session_state.message = f"⚡ 融合：{current.den} 與 {card.den} -> {common_den}"
         
-        # 更新當前位置
         factor_curr = common_den // current.den
         current.num *= factor_curr
         current.den = common_den
         
-        # 只更新這一張手牌 (Surgical Fusion)
         factor_card = common_den // card.den
         card.num *= factor_card
         card.den = common_den
@@ -158,25 +151,18 @@ def play_card(idx):
     check_win()
 
 def check_win():
-    # 交叉相乘比較 (最精準)
     curr = st.session_state.current
     tgt = st.session_state.target
     
-    # 判斷是否相等
     if curr.num * tgt.den == tgt.num * curr.den:
         st.session_state.message = "🎉 任務完成！"
         next_level()
     elif len(st.session_state.hand) == 0:
-        # 如果手牌沒了但沒贏，這在「倒推法」中理論上不應該發生，
-        # 除非玩家先做了某些導致分母膨脹到無法挽回的操作？
-        # 但為了保險，給一個重置按鈕
         st.session_state.message = "💀 運算偏離軌道... (請重試)"
     else:
         st.session_state.message = "🚀 飛行中..."
 
 def reset_current_level():
-    # 重置本關 (不換題目，只重置手牌)
-    # 這裡我們重新生成，避免死局
     t, c, h = generate_level_data(st.session_state.level)
     st.session_state.target = t
     st.session_state.current = c
@@ -184,7 +170,7 @@ def reset_current_level():
     st.session_state.message = "🔄 關卡重置"
 
 # ==========================================
-# 3. UI 渲染 (HTML 縮排修復版)
+# 3. UI 渲染 (字串拼接修復版)
 # ==========================================
 
 st.title(f"🏹 分數獵人 Level {st.session_state.level}")
@@ -193,39 +179,31 @@ st.info(st.session_state.message)
 curr_val = st.session_state.current.value
 tgt_val = st.session_state.target.value
 
-# 視覺化計算
-# 為了讓畫面好看，我們動態調整跑道的長度
-# 跑道長度 = 目標值的 1.5 倍，確保旗幟不會在最邊邊
 track_scale = max(tgt_val * 1.5, 2.0)
 pos_tgt = min(max(tgt_val / track_scale * 100, 2), 95)
 pos_curr = min(max(curr_val / track_scale * 100, 2), 95)
 
-# 🧹 使用 textwrap.dedent 清除 HTML 縮排
-html_code = textwrap.dedent(f"""
-    <div style="position: relative; width: 100%; height: 120px; background-color: #353b48; border-radius: 15px; margin: 20px 0; border: 3px solid #7f8fa6; overflow: hidden;">
-        <div style="position: absolute; width: 100%; height: 100%; background: repeating-linear-gradient(90deg, transparent, transparent 19%, #444 20%); opacity: 0.3;"></div>
-        <div style="position: absolute; bottom: 5px; left: 10px; color: #aaa; font-size: 12px;">0</div>
-        <div style="position: absolute; bottom: 5px; right: 10px; color: #aaa; font-size: 12px;">{track_scale:.1f}</div>
-        
-        <div style="position: absolute; left: {pos_tgt}%; top: 20px; transform: translateX(-50%); text-align: center; z-index: 1;">
-            <div style="font-size: 30px; line-height: 1;">🚩</div>
-            <div style="background: rgba(239, 35, 60, 0.8); color: white; padding: 2px 6px; border-radius: 4px; font-size: 14px; margin-top: 5px;">
-                {st.session_state.target}
-            </div>
-        </div>
-        
-        <div style="position: absolute; left: {pos_curr}%; top: 60px; transition: left 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform: translateX(-50%); z-index: 2; text-align: center;">
-            <div style="font-size: 40px; filter: drop-shadow(0 0 10px #4cd137); transform: rotate(90deg);">🚀</div>
-        </div>
-    </div>
-    
-    <div style="text-align: center; margin-bottom: 20px;">
-        <span style="color: #bbb; font-size: 18px;">當前位置: </span>
-        <span style="color: #4cd137; font-weight: bold; font-size: 32px;">{st.session_state.current}</span>
-    </div>
-""")
+# 🚨 終極修復：使用 Python 變數拼接 HTML
+# 這避免了任何縮排或 Markdown 解析器的誤判
+game_html = ""
+game_html += f'<div style="position: relative; width: 100%; height: 120px; background-color: #353b48; border-radius: 15px; margin: 20px 0; border: 3px solid #7f8fa6; overflow: hidden;">'
+game_html += f'  <div style="position: absolute; width: 100%; height: 100%; background: repeating-linear-gradient(90deg, transparent, transparent 19%, #444 20%); opacity: 0.3;"></div>'
+game_html += f'  <div style="position: absolute; bottom: 5px; left: 10px; color: #aaa; font-size: 12px;">0</div>'
+game_html += f'  <div style="position: absolute; bottom: 5px; right: 10px; color: #aaa; font-size: 12px;">{track_scale:.1f}</div>'
+game_html += f'  <div style="position: absolute; left: {pos_tgt}%; top: 20px; transform: translateX(-50%); text-align: center; z-index: 1;">'
+game_html += f'    <div style="font-size: 30px; line-height: 1;">🚩</div>'
+game_html += f'    <div style="background: rgba(239, 35, 60, 0.8); color: white; padding: 2px 6px; border-radius: 4px; font-size: 14px; margin-top: 5px;">{st.session_state.target}</div>'
+game_html += f'  </div>'
+game_html += f'  <div style="position: absolute; left: {pos_curr}%; top: 60px; transition: left 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform: translateX(-50%); z-index: 2; text-align: center;">'
+game_html += f'    <div style="font-size: 40px; filter: drop-shadow(0 0 10px #4cd137); transform: rotate(90deg);">🚀</div>'
+game_html += f'  </div>'
+game_html += f'</div>'
+game_html += f'<div style="text-align: center; margin-bottom: 20px;">'
+game_html += f'  <span style="color: #bbb; font-size: 18px;">當前位置: </span>'
+game_html += f'  <span style="color: #4cd137; font-weight: bold; font-size: 32px;">{st.session_state.current}</span>'
+game_html += f'</div>'
 
-st.markdown(html_code, unsafe_allow_html=True)
+st.markdown(game_html, unsafe_allow_html=True)
 
 st.write("### 🃏 你的手牌")
 
@@ -241,8 +219,9 @@ else:
         with cols[i]:
             is_diff = card.den != st.session_state.current.den
             
+            # 手動添加 Emoji 確保不依賴 CSS 渲染
             if is_diff:
-                label = f"{card.num}/{card.den}\n⚡"
+                label = f"{card.num}/{card.den} ⚡"
                 help_txt = "分母不同！點擊通分"
             else:
                 label = f"{card.num}/{card.den}"
@@ -259,7 +238,7 @@ if st.button("🎲 換一題 (跳過本關)"):
 
 with st.expander("📖 玩法說明"):
     st.markdown("""
-    1. **必勝法**：這一版保證有解！只要把手上的牌**全部**打出去，就會剛好到達終點。
+    1. **必勝法**：保證有解！只要把手上的牌**全部**打出去，就會剛好到達終點。
     2. **⚡ 通分**：如果手牌分母和火箭不同，點擊會先進行「融合」通分。
     3. **策略**：觀察分母，先把容易通分的牌打出去。
     """)
