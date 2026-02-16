@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import math
 from fractions import Fraction
 from dataclasses import dataclass, field
 from typing import List, Tuple
@@ -78,14 +79,14 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* 戰術分析區塊 */
-    .tactical-feedback {
-        background-color: #45475a;
+    /* 數學推導區塊 */
+    .math-steps {
+        background-color: #313244;
         padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #f9e2af;
-        margin-top: 15px;
-        font-size: 1rem;
+        border-radius: 8px;
+        border: 1px dashed #6c7086;
+        margin-top: 10px;
+        font-family: 'Courier New', monospace;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -112,7 +113,7 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 戰術增強版 v2.1
+# 3. 核心引擎 (Game Engine) - 白盒推導版 v2.2
 # ==========================================
 
 class GameEngine:
@@ -122,35 +123,27 @@ class GameEngine:
     """
     def __init__(self):
         # 初始化檢查：如果 session_state 缺少關鍵變數，強制重置
-        # 新增 feedback 與 solution_str 以支援戰術分析
-        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback', 'solution_str']
+        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback', 'correct_hand_cache']
         if any(key not in st.session_state for key in required_keys):
             self.reset_game()
     
-    # 所有的屬性讀取都使用 .get()
+    # 屬性讀取
     @property
     def level(self): return st.session_state.get('level', 1)
-    
     @property
     def target(self): return st.session_state.get('target', Fraction(1, 1))
-    
     @property
     def current(self): return st.session_state.get('current', Fraction(0, 1))
-    
     @property
     def hand(self): return st.session_state.get('hand', [])
-    
     @property
     def message(self): return st.session_state.get('msg', "系統載入中...")
-    
     @property
     def state(self): return st.session_state.get('game_state', 'playing')
-
     @property
     def feedback(self): return st.session_state.get('feedback', "")
-
     @property
-    def solution_str(self): return st.session_state.get('solution_str', "")
+    def correct_hand(self): return st.session_state.get('correct_hand_cache', [])
 
     def reset_game(self):
         st.session_state.level = 1
@@ -158,25 +151,21 @@ class GameEngine:
 
     def start_level(self, level: int):
         st.session_state.level = level
-        # 這裡我們同時接收正確的組合路徑 (correct_subset)
+        # 生成數據並緩存正確答案
         target, start_val, hand, correct_subset = self._generate_math_data(level)
         
         st.session_state.target = target
         st.session_state.current = start_val
         st.session_state.hand = hand
-        
-        # 預先格式化正確答案，供結算使用 (例如: "1/2 + 1/4")
-        sol_str = " + ".join([c.display for c in correct_subset])
-        st.session_state.solution_str = sol_str
+        st.session_state.correct_hand_cache = correct_subset # 緩存以供推導使用
         
         st.session_state.game_state = 'playing'
         st.session_state.msg = f"⚔️ 第 {level} 關: 尋找平衡點！"
-        st.session_state.feedback = "" # 清空上一關的回饋
+        st.session_state.feedback = "" 
 
     def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card], List[Card]]:
         """
         生成關卡數據 (Procedural Generation)
-        現在會返回正確的手牌組合供分析使用
         """
         # 難度設定
         if level == 1: den_pool = [2, 4]
@@ -242,56 +231,74 @@ class GameEngine:
 
     def _trigger_end_game(self, status):
         """
-        統一處理遊戲結束邏輯，生成戰術回饋
+        統一處理遊戲結束邏輯
         """
         st.session_state.game_state = 'won' if status == 'won' else 'lost'
         
-        if status == 'won':
-            st.session_state.msg = "🎉 完美平衡！(Perfect Equilibrium)"
-            st.session_state.feedback = self._generate_feedback(status)
-        elif status == 'lost_over':
-            st.session_state.msg = "💥 能量過載！(Entropy Overflow)"
-            st.session_state.feedback = self._generate_feedback(status)
-        elif status == 'lost_empty':
-            st.session_state.msg = "💀 資源耗盡！(Resource Depleted)"
-            st.session_state.feedback = self._generate_feedback(status)
-
-    def _generate_feedback(self, status) -> str:
-        """
-        生成具體的數學建議 (Metacognitive Feedback)
-        """
-        tgt = st.session_state.target
-        curr = st.session_state.current
-        sol = st.session_state.solution_str
+        # 生成數學推導步驟
+        math_steps = self._generate_step_by_step_solution(st.session_state.correct_hand_cache)
         
         if status == 'won':
-            tips = [
-                "✅ **思維模型：** 你成功運用了「部分之和等於整體」。",
-                "✅ **直覺建立：** 記住這個組合，下次遇到類似的分數可以直接反應。",
-                "✅ **精準度：** 零誤差操作，熵值降為最低。"
-            ]
-            return random.choice(tips)
-            
+            st.session_state.msg = "🎉 完美平衡！(Perfect Equilibrium)"
+            st.session_state.feedback = f"### ✅ 驗算成功\n你找到了正確的組合！讓我們看看數學原理：\n\n{math_steps}"
         elif status == 'lost_over':
-            diff = curr - tgt
-            return f"""
-            **❌ 誤差分析：**
-            *   你超出了目標 **{diff}**。
-            *   這意味著你多打出了一張約等於 **{float(diff):.2f}** 的牌。
-            *   **正確路徑：** 系統最佳解是：`{sol}`
-            *   **建議：** 下次試著先在腦中估算總和，不要急著出牌。
-            """
-            
+            st.session_state.msg = "💥 能量過載！(Entropy Overflow)"
+            st.session_state.feedback = f"### ❌ 誤差分析\n總和超過了目標。正確的解法應該是：\n\n{math_steps}"
         elif status == 'lost_empty':
-            diff = tgt - curr
-            return f"""
-            **❌ 誤差分析：**
-            *   你還缺少 **{diff}** 才能到達目標。
-            *   看來你把關鍵的牌當作干擾牌保留了，或者順序策略有誤。
-            *   **正確路徑：** 系統最佳解是：`{sol}`
-            *   **建議：** 觀察分母的倍數關係（如 1/2 = 2/4），尋找通分後的組合。
-            """
-        return ""
+            st.session_state.msg = "💀 資源耗盡！(Resource Depleted)"
+            st.session_state.feedback = f"### ❌ 誤差分析\n手牌用光了但未達目標。正確的解法應該是：\n\n{math_steps}"
+
+    def _generate_step_by_step_solution(self, cards: List[Card]) -> str:
+        """
+        生成詳細的通分與計算步驟 (The White-Box Logic)
+        """
+        if not cards: return "無解"
+        
+        # 1. 找出所有分母
+        denoms = [c.denominator for c in cards]
+        
+        # 2. 計算最小公倍數 (LCM)
+        lcm = denoms[0]
+        for d in denoms[1:]:
+            lcm = (lcm * d) // math.gcd(lcm, d)
+            
+        # 3. 生成擴分步驟
+        expansion_steps = []
+        numerators_sum_str = []
+        total_numerator = 0
+        
+        for c in cards:
+            factor = lcm // c.denominator
+            expanded_num = c.numerator * factor
+            total_numerator += expanded_num
+            
+            if factor > 1:
+                expansion_steps.append(f"- **{c.display}** 擴分 (×{factor}) → **{expanded_num}/{lcm}**")
+            else:
+                expansion_steps.append(f"- **{c.display}** (無需擴分) → **{expanded_num}/{lcm}**")
+            
+            numerators_sum_str.append(str(expanded_num))
+            
+        # 4. 組合最終字串
+        step1 = f"**Step 1: 尋找公分母**\n分母 {denoms} 的最小公倍數是 **{lcm}**。"
+        step2 = f"**Step 2: 通分變形**\n" + "\n".join(expansion_steps)
+        step3 = f"**Step 3: 分子加總**\n"
+        step3 += f"$$ \\frac{{{' + '.join(numerators_sum_str)}}}{{{lcm}}} = \\frac{{{total_numerator}}}{{{lcm}}} $$"
+        
+        # 檢查是否需要約分
+        final_frac = Fraction(total_numerator, lcm)
+        if final_frac.denominator != lcm:
+            step3 += f"\n\n**Step 4: 約分 (最終答案)**\n$$ \\frac{{{total_numerator}}}{{{lcm}}} = {final_frac.numerator}/{final_frac.denominator} $$"
+            
+        return f"""
+<div class="math-steps">
+{step1}
+<br><br>
+{step2}
+<br><br>
+{step3}
+</div>
+"""
 
     def next_level(self):
         self.start_level(self.level + 1)
@@ -310,7 +317,6 @@ st.title(f"🧩 零熵分數挑戰")
 st.markdown(f"<div class='status-msg'>{engine.message}</div>", unsafe_allow_html=True)
 
 # 1. 視覺化軌道 (Visual Feedback Loop)
-# 計算百分比
 target_val = engine.target if engine.target > 0 else Fraction(1, 1)
 max_val = max(target_val * Fraction(3, 2), Fraction(2, 1)) 
 
@@ -353,9 +359,9 @@ else:
     
     # 顯示戰術回饋 (Tactical Feedback)
     if engine.state == 'won':
-        st.success(f"### 🏆 挑戰成功！\n\n{engine.feedback}")
+        st.success(f"{engine.feedback}")
     else:
-        st.error(f"### ⚠️ 運算崩潰\n\n{engine.feedback}")
+        st.error(f"{engine.feedback}")
     
     # 操作按鈕
     col1, col2, col3 = st.columns([1, 2, 1])
