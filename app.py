@@ -8,7 +8,6 @@ import random
 # ==========================================
 st.set_page_config(page_title="Fraction Hunter", page_icon="🏹", layout="centered")
 
-# CSS 修復：針對 Streamlit 不同版本的 DOM 結構進行全面覆蓋
 st.markdown("""
 <style>
     .stApp {
@@ -26,7 +25,7 @@ st.markdown("""
         width: 100%;
     }
 
-    /* 🚨 核彈級修復：強制所有按鈕內的文字變成黑色 */
+    /* 按鈕文字 */
     div.stButton > button, 
     div.stButton > button p, 
     div.stButton > button div,
@@ -52,7 +51,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 核心邏輯 (倒推生成法 - 保證有解)
+# 2. 核心邏輯 (加入干擾項)
 # ==========================================
 
 class FractionCard:
@@ -76,43 +75,54 @@ if 'level' not in st.session_state: st.session_state.level = 1
 if 'target' not in st.session_state: st.session_state.target = FractionCard(3, 4)
 if 'current' not in st.session_state: st.session_state.current = FractionCard(0, 4)
 if 'hand' not in st.session_state: 
-    st.session_state.hand = [FractionCard(1, 2), FractionCard(1, 4)]
-if 'message' not in st.session_state: st.session_state.message = "🎮 第一關：把手牌全打出去！"
+    st.session_state.hand = [FractionCard(1, 2), FractionCard(1, 4), FractionCard(1, 3)] # 初始含干擾
+if 'message' not in st.session_state: st.session_state.message = "🎮 第一關：小心！有些牌是多餘的！"
 
 def generate_level_data(level):
-    # 倒推生成法：先發牌，再算目標
+    # 難度池
     if level == 1: den_pool = [2, 4]
     elif level == 2: den_pool = [3, 6]
     elif level == 3: den_pool = [4, 8, 2]
     else: den_pool = [2, 3, 4, 6]
 
-    hand = []
+    correct_hand = []
     total_num = 0
-    common_base = 24 # 用於統一計算的基數
+    common_base = 24 
     
-    card_count = random.randint(3, 5)
-    
-    for _ in range(card_count):
+    # 1. 生成「正確解」的組合 (2-3 張)
+    correct_count = random.randint(2, 3)
+    for _ in range(correct_count):
         den = random.choice(den_pool)
-        num = random.choice([1, 1, 2, -1]) 
+        num = random.choice([1, 1, 2]) # 盡量正數，簡單點
         
-        # 防止總和變負
         current_val = total_num / common_base
-        if current_val + (num/den) < 0:
-            num = 1 
+        # 簡單防呆
+        if current_val + (num/den) < 0: num = 1
             
-        hand.append(FractionCard(num, den))
+        correct_hand.append(FractionCard(num, den))
         
         factor = common_base // den
         total_num += num * factor
 
-    # 計算目標
+    # 2. 計算目標 (基於正確解)
     target_gcd = gcd(total_num, common_base)
     target = FractionCard(total_num // target_gcd, common_base // target_gcd)
     current = FractionCard(0, target.den) 
     
-    random.shuffle(hand)
-    return target, current, hand
+    # 3. 🚨 生成「干擾牌」 (Distractors)
+    # 故意生成 1-2 張和正確解分母類似，但加上去會讓答案錯誤的牌
+    distractor_count = random.randint(1, 2)
+    distractors = []
+    for _ in range(distractor_count):
+        d_den = random.choice(den_pool)
+        d_num = random.choice([1, -1])
+        distractors.append(FractionCard(d_num, d_den))
+        
+    # 合併並洗牌
+    final_hand = correct_hand + distractors
+    random.shuffle(final_hand)
+    
+    return target, current, final_hand
 
 def next_level():
     st.session_state.level += 1
@@ -120,7 +130,7 @@ def next_level():
     st.session_state.target = t
     st.session_state.current = c
     st.session_state.hand = h
-    st.session_state.message = f"🚀 進入第 {st.session_state.level} 關！"
+    st.session_state.message = f"🚀 進入第 {st.session_state.level} 關！(注意陷阱牌)"
     st.balloons()
 
 def play_card(idx):
@@ -154,13 +164,19 @@ def check_win():
     curr = st.session_state.current
     tgt = st.session_state.target
     
+    # 交叉相乘判斷相等
     if curr.num * tgt.den == tgt.num * curr.den:
         st.session_state.message = "🎉 任務完成！"
         next_level()
     elif len(st.session_state.hand) == 0:
-        st.session_state.message = "💀 運算偏離軌道... (請重試)"
+        # 手牌打完了但沒贏 -> 玩家選錯了組合
+        st.session_state.message = "💀 任務失敗！你選到了干擾牌...(請重置)"
     else:
-        st.session_state.message = "🚀 飛行中..."
+        # 檢查是否已經超過目標 (簡單提示)
+        if curr.value > tgt.value:
+             st.session_state.message = "⚠️ 飛過頭了！(看看有沒有負數牌可以拉回來)"
+        else:
+             st.session_state.message = "🚀 飛行中..."
 
 def reset_current_level():
     t, c, h = generate_level_data(st.session_state.level)
@@ -170,7 +186,7 @@ def reset_current_level():
     st.session_state.message = "🔄 關卡重置"
 
 # ==========================================
-# 3. UI 渲染 (字串拼接修復版)
+# 3. UI 渲染
 # ==========================================
 
 st.title(f"🏹 分數獵人 Level {st.session_state.level}")
@@ -183,8 +199,7 @@ track_scale = max(tgt_val * 1.5, 2.0)
 pos_tgt = min(max(tgt_val / track_scale * 100, 2), 95)
 pos_curr = min(max(curr_val / track_scale * 100, 2), 95)
 
-# 🚨 終極修復：使用 Python 變數拼接 HTML
-# 這避免了任何縮排或 Markdown 解析器的誤判
+# 字串拼接 HTML (最穩定的渲染方式)
 game_html = ""
 game_html += f'<div style="position: relative; width: 100%; height: 120px; background-color: #353b48; border-radius: 15px; margin: 20px 0; border: 3px solid #7f8fa6; overflow: hidden;">'
 game_html += f'  <div style="position: absolute; width: 100%; height: 100%; background: repeating-linear-gradient(90deg, transparent, transparent 19%, #444 20%); opacity: 0.3;"></div>'
@@ -205,11 +220,11 @@ game_html += f'</div>'
 
 st.markdown(game_html, unsafe_allow_html=True)
 
-st.write("### 🃏 你的手牌")
+st.write("### 🃏 你的手牌 (別全選！有陷阱！)")
 
 if not st.session_state.hand:
     if "成功" not in st.session_state.message:
-        st.error("任務失敗！(手牌用完了)")
+        st.error("任務失敗！(手牌用完了但沒對上)")
         if st.button("🔄 重置本關"):
             reset_current_level()
             st.rerun()
@@ -219,7 +234,6 @@ else:
         with cols[i]:
             is_diff = card.den != st.session_state.current.den
             
-            # 手動添加 Emoji 確保不依賴 CSS 渲染
             if is_diff:
                 label = f"{card.num}/{card.den} ⚡"
                 help_txt = "分母不同！點擊通分"
@@ -232,13 +246,13 @@ else:
                 st.rerun()
 
 st.markdown("---")
-if st.button("🎲 換一題 (跳過本關)"):
+if st.button("🎲 換一題"):
     reset_current_level()
     st.rerun()
 
 with st.expander("📖 玩法說明"):
     st.markdown("""
-    1. **必勝法**：保證有解！只要把手上的牌**全部**打出去，就會剛好到達終點。
-    2. **⚡ 通分**：如果手牌分母和火箭不同，點擊會先進行「融合」通分。
-    3. **策略**：觀察分母，先把容易通分的牌打出去。
+    1. **目標**：讓火箭 🚀 數值**剛好等於**旗幟 🚩。
+    2. **陷阱**：**不要把牌全打出去！** 裡面混了 1~2 張多餘的干擾牌。你必須計算並選擇正確的組合。
+    3. **⚡ 通分**：如果手牌分母和火箭不同，點擊會先進行「融合」通分。
     """)
