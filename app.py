@@ -112,6 +112,23 @@ st.markdown("""
         font-size: 1.2rem;
         margin-top: 5px;
     }
+    
+    /* 正確手牌展示區 */
+    .correct-hand-box {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+    .mini-card {
+        background-color: #cba6f7;
+        color: #181825;
+        padding: 5px 15px;
+        border-radius: 6px;
+        font-weight: bold;
+        font-family: monospace;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -137,7 +154,7 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 人類直覺版 v2.5
+# 3. 核心引擎 (Game Engine) - 顯示正確手牌版 v2.6
 # ==========================================
 
 class GameEngine:
@@ -182,15 +199,17 @@ class GameEngine:
         st.session_state.math_log = ""
 
     def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card], List[Card]]:
+        # 難度設定：增加分母的多樣性
         if level == 1: den_pool = [2, 4]
         elif level == 2: den_pool = [2, 3, 4, 6]
         elif level <= 5: den_pool = [2, 3, 4, 5, 8]
-        else: den_pool = [3, 6, 7, 9, 12]
+        else: den_pool = [3, 6, 7, 9, 12] # 這裡會出現 7 和 9，導致 63
 
         target_val = Fraction(0, 1)
         correct_hand = []
         steps = random.randint(2, 3 + (level // 3))
         
+        # 1. 先生產正確答案 (保證有解)
         for _ in range(steps):
             d = random.choice(den_pool)
             n = random.choice([1, 1, 2])
@@ -201,6 +220,7 @@ class GameEngine:
         target = target_val
         current = Fraction(0, 1)
 
+        # 2. 混入干擾牌
         distractor_count = random.randint(1, 2)
         distractors = []
         for _ in range(distractor_count):
@@ -253,9 +273,12 @@ class GameEngine:
     def _generate_step_by_step_solution(self, cards: List[Card]) -> str:
         """
         生成 HTML 格式的解題步驟
-        v2.5 更新：移除 LaTeX，改用直觀的橫式算式
+        v2.6 新增：在最上方顯示「正確手牌組合」
         """
         if not cards: return "無解"
+        
+        # 生成正確手牌的 HTML 區塊
+        hand_html = "".join([f'<div class="mini-card">{c.display}</div>' for c in cards])
         
         denoms = [c.denominator for c in cards]
         lcm = denoms[0]
@@ -278,9 +301,15 @@ class GameEngine:
             
             numerators_sum_str.append(str(expanded_num))
             
-        # 構建 HTML 字串 (注意：無縮排)
+        # 構建 HTML 字串
         html = f"""
 <div class="math-steps">
+<span class="math-step-title">💡 正確手牌組合 (The Correct Hand)</span>
+<div class="correct-hand-box">
+{hand_html}
+</div>
+<hr style="border-color: #45475a; margin: 15px 0;">
+
 <span class="math-step-title">Step 1: 尋找公分母</span>
 <div style="margin-left: 20px;">
 分母 {denoms} 的最小公倍數是 <b>{lcm}</b>。
