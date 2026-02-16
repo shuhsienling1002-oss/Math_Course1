@@ -8,7 +8,7 @@ from typing import List, Tuple
 # ==========================================
 # 1. 頁面設定與 CSS (View Layer)
 # ==========================================
-st.set_page_config(page_title="零熵分數挑戰", page_icon="🧩", layout="centered")
+st.set_page_config(page_title="分數拼湊大作戰", page_icon="🧩", layout="centered")
 
 st.markdown("""
 <style>
@@ -154,7 +154,7 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 顯示正確手牌版 v2.6
+# 3. 核心引擎 (Game Engine) - 國中生友善版 v3.0
 # ==========================================
 
 class GameEngine:
@@ -194,22 +194,22 @@ class GameEngine:
         st.session_state.correct_hand_cache = correct_subset
         
         st.session_state.game_state = 'playing'
-        st.session_state.msg = f"⚔️ 第 {level} 關: 尋找平衡點！"
+        st.session_state.msg = f"⚔️ 第 {level} 關: 目標是湊出指定分數！"
         st.session_state.feedback_header = "" 
         st.session_state.math_log = ""
 
     def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card], List[Card]]:
-        # 難度設定：增加分母的多樣性
+        # 難度設定
         if level == 1: den_pool = [2, 4]
         elif level == 2: den_pool = [2, 3, 4, 6]
         elif level <= 5: den_pool = [2, 3, 4, 5, 8]
-        else: den_pool = [3, 6, 7, 9, 12] # 這裡會出現 7 和 9，導致 63
+        else: den_pool = [3, 6, 7, 9, 12]
 
         target_val = Fraction(0, 1)
         correct_hand = []
         steps = random.randint(2, 3 + (level // 3))
         
-        # 1. 先生產正確答案 (保證有解)
+        # 1. 先生產正確答案
         for _ in range(steps):
             d = random.choice(den_pool)
             n = random.choice([1, 1, 2])
@@ -253,27 +253,26 @@ class GameEngine:
             self._trigger_end_game('lost_empty')
         else:
             diff = tgt - curr
-            st.session_state.msg = f"🚀 推進中... 還差 {diff}"
+            st.session_state.msg = f"🚀 加油... 還差 {diff}"
 
     def _trigger_end_game(self, status):
         st.session_state.game_state = 'won' if status == 'won' else 'lost'
         
         if status == 'won':
-            st.session_state.msg = "🎉 完美平衡！"
-            st.session_state.feedback_header = "✅ 驗算成功！你找到了正確的組合。"
+            st.session_state.msg = "🎉 挑戰成功！"
+            st.session_state.feedback_header = "✅ 太棒了！你算對了！"
         elif status == 'lost_over':
-            st.session_state.msg = "💥 能量過載！"
-            st.session_state.feedback_header = "❌ 誤差分析：總和超過了目標。"
+            st.session_state.msg = "💥 爆掉了！"
+            st.session_state.feedback_header = "❌ 哎呀，加太多了！超過目標了。"
         elif status == 'lost_empty':
-            st.session_state.msg = "💀 資源耗盡！"
-            st.session_state.feedback_header = "❌ 誤差分析：手牌用盡但未達目標。"
+            st.session_state.msg = "💀 牌用光了！"
+            st.session_state.feedback_header = "❌ 牌都出完了，但還沒湊到目標。"
 
         st.session_state.math_log = self._generate_step_by_step_solution(st.session_state.correct_hand_cache)
 
     def _generate_step_by_step_solution(self, cards: List[Card]) -> str:
         """
         生成 HTML 格式的解題步驟
-        v2.6 新增：在最上方顯示「正確手牌組合」
         """
         if not cards: return "無解"
         
@@ -304,22 +303,22 @@ class GameEngine:
         # 構建 HTML 字串
         html = f"""
 <div class="math-steps">
-<span class="math-step-title">💡 正確手牌組合 (The Correct Hand)</span>
+<span class="math-step-title">💡 正確的卡牌組合是：</span>
 <div class="correct-hand-box">
 {hand_html}
 </div>
 <hr style="border-color: #45475a; margin: 15px 0;">
 
-<span class="math-step-title">Step 1: 尋找公分母</span>
+<span class="math-step-title">Step 1: 找分母的最小公倍數</span>
 <div style="margin-left: 20px;">
 分母 {denoms} 的最小公倍數是 <b>{lcm}</b>。
 </div>
 <br>
-<span class="math-step-title">Step 2: 通分變形</span>
+<span class="math-step-title">Step 2: 通分 (把分母變一樣)</span>
 <ul class="math-list">
 {expansion_items}
 </ul>
-<span class="math-step-title">Step 3: 分子加總</span>
+<span class="math-step-title">Step 3: 分子相加</span>
 <div style="margin-left: 20px;">
 <div class="result-box">
 ( {' + '.join(numerators_sum_str)} ) ÷ {lcm} = {total_numerator}/{lcm}
@@ -331,7 +330,7 @@ class GameEngine:
         if final_frac.denominator != lcm:
             html += f"""
 <br>
-<span class="math-step-title">Step 4: 約分 (最終答案)</span>
+<span class="math-step-title">Step 4: 約分 (算出最後答案)</span>
 <div style="margin-left: 20px;">
 <div class="result-box">
 {total_numerator}/{lcm} = {final_frac.numerator}/{final_frac.denominator}
@@ -354,7 +353,7 @@ class GameEngine:
 
 engine = GameEngine()
 
-st.title(f"🧩 零熵分數挑戰")
+st.title(f"🧩 分數拼湊大作戰")
 st.markdown(f"<div class='status-msg'>{engine.message}</div>", unsafe_allow_html=True)
 
 # 1. 視覺化軌道
@@ -383,7 +382,7 @@ st.markdown(html_content, unsafe_allow_html=True)
 
 # 2. 遊戲互動區
 if engine.state == 'playing':
-    st.write("### 🎴 你的策略手牌")
+    st.write("### 🎴 請選擇要出的牌")
     if engine.hand:
         cols = st.columns(len(engine.hand))
         for i, card in enumerate(engine.hand):
@@ -411,11 +410,11 @@ else:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if engine.state == 'won':
-            if st.button("🚀 進入下一層維度 (Next Level)", type="primary", use_container_width=True):
+            if st.button("🚀 挑戰下一關 (Next Level)", type="primary", use_container_width=True):
                 engine.next_level()
                 st.rerun()
         else:
-            if st.button("🔄 重置時間線 (Retry)", type="secondary", use_container_width=True):
+            if st.button("🔄 再試一次 (Retry)", type="secondary", use_container_width=True):
                 engine.retry_level()
                 st.rerun()
 
@@ -427,8 +426,8 @@ with st.sidebar:
     
     st.markdown("---")
     st.markdown("""
-    **玩法說明 (Zero-Entropy):**
+    **玩法說明:**
     1. **目標**: 讓藍色進度條剛好停在粉紅線上。
-    2. **陷阱**: 手牌中混有「雜訊牌」，全部打出會爆掉！
-    3. **策略**: 計算並選擇正確的組合 (納什均衡)。
+    2. **陷阱**: 手牌裡有一些「多餘的牌」，不要全部打出去喔！
+    3. **策略**: 先算一下，選出正確的組合。
     """)
