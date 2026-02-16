@@ -8,36 +8,57 @@ import random
 # ==========================================
 st.set_page_config(page_title="Fraction Hunter", page_icon="🏹", layout="centered")
 
-# 修正重點：強制設定按鈕文字顏色與背景，避免白底白字
+# 修正重點说明：
+# 1. div.stButton > button p: 強制設定按鈕內文字顏色為深色 (覆蓋 Streamlit 深色模式預設的白色)
+# 2. HTML 字串全部向左對齊，沒有任何縮排 (解決代碼外露問題)
+
 st.markdown("""
 <style>
-    /* 全局背景設定 */
+    /* 全局背景設定：深藍色 */
     .stApp {
         background-color: #2b2d42;
         color: white;
     }
     
-    /* 修正按鈕樣式：強制深色文字與淺色背景，確保可讀性 */
+    /* --- 核彈級按鈕修復 --- */
+    /* 針對按鈕容器 */
     div.stButton > button {
-        background: linear-gradient(135deg, #edf2f4 0%, #8d99ae 100%);
-        color: #2b2d42 !important; /* 強制文字為深藍色 */
-        border: 2px solid white;
-        border-radius: 15px;
-        font-weight: bold;
-        font-size: 20px;
-        padding: 10px 20px;
-        width: 100%;
-        transition: transform 0.1s;
-    }
-    
-    /* 按鈕懸停效果 */
-    div.stButton > button:hover {
-        transform: scale(1.05);
-        color: #ef233c !important; /* 懸停時變紅色 */
-        border-color: #ef233c;
+        background: linear-gradient(to bottom, #ffffff 0%, #e0e0e0 100%) !important; /* 強制白/灰漸層背景 */
+        border: 2px solid #ffffff !important;
+        border-radius: 12px !important;
+        padding: 10px 0px !important;
+        transition: all 0.2s ease !important;
+        box-shadow: 0 4px 0 #999 !important; /* 增加立體感 */
     }
 
-    /* 隱藏選單 */
+    /* 針對按鈕內的文字 (關鍵修復点) */
+    div.stButton > button p {
+        color: #2b2d42 !important; /* 強制深藍色文字 */
+        font-size: 24px !important;
+        font-weight: 900 !important;
+        margin: 0 !important;
+    }
+    
+    /* 針對按鈕內的 Emoji 或其他元素 */
+    div.stButton > button * {
+        color: #2b2d42 !important;
+    }
+
+    /* 按鈕懸停效果 */
+    div.stButton > button:hover {
+        transform: translateY(2px) !important;
+        box-shadow: 0 2px 0 #666 !important;
+        background: #ffecd1 !important; /* 懸停變淡黃色 */
+        border-color: #ef233c !important;
+    }
+    
+    /* 按鈕點擊效果 */
+    div.stButton > button:active {
+        transform: translateY(4px) !important;
+        box-shadow: none !important;
+    }
+
+    /* 隱藏 Streamlit 選單 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
@@ -61,6 +82,7 @@ class FractionCard:
 def gcd(a, b): return math.gcd(a, b)
 def lcm(a, b): return abs(a * b) // gcd(a, b)
 
+# 初始化狀態
 if 'level' not in st.session_state: st.session_state.level = 1
 if 'target' not in st.session_state: st.session_state.target = FractionCard(3, 4)
 if 'current' not in st.session_state: st.session_state.current = FractionCard(0, 4)
@@ -91,7 +113,7 @@ def play_card(idx):
     
     if card.den != current.den:
         common_den = lcm(card.den, current.den)
-        st.session_state.message = f"⚡ 啟動魔法融合！ {card.den} 和 {current.den} 變成了 {common_den}"
+        st.session_state.message = f"⚡ 魔法融合！ {card.den} 和 {current.den} 變成了 {common_den}"
         
         factor_c = common_den // current.den
         current.num *= factor_c
@@ -122,7 +144,7 @@ def check_win():
         st.session_state.message = "🎉 捕獲成功！"
         next_level()
     elif len(st.session_state.hand) == 0:
-        st.session_state.message = "💀 手牌耗盡... 任務失敗 (按重置)"
+        st.session_state.message = "💀 沒牌了... (按重置)"
 
 def reset_game():
     st.session_state.level = 1
@@ -142,51 +164,61 @@ st.info(st.session_state.message)
 curr_val = st.session_state.current.value
 tgt_val = st.session_state.target.value
 
-# 修正重點：移除 HTML 字串內的所有縮排，防止被當成代碼區塊渲染
-st.markdown(f"""
-<div style="position: relative; width: 100%; height: 80px; background-color: #333; border-radius: 40px; margin: 30px 0; border: 2px solid #555;">
-<div style="position: absolute; left: {min(max((tgt_val + 0.5) / 2 * 100, 0), 100)}%; top: -40px; transform: translateX(-50%); text-align: center;">
-<div style="font-size: 30px;">🚩</div>
-<div style="color: #ef233c; font-weight: bold; background: rgba(0,0,0,0.5); padding: 2px 5px; border-radius: 5px;">{st.session_state.target}</div>
-</div>
-<div style="position: absolute; left: {min(max((curr_val + 0.5) / 2 * 100, 0), 100)}%; top: 15px; transition: left 0.5s ease; transform: translateX(-50%);">
-<div style="font-size: 40px;">🚀</div>
-</div>
-</div>
-<div style="text-align: center; color: #8d99ae; font-size: 18px; margin-bottom: 20px;">你的位置: <b>{st.session_state.current}</b></div>
-""", unsafe_allow_html=True)
+# 計算 CSS 位置 (限制在 0% - 100%)
+# 假設戰場總長度代表數值 0 到 1.5 (為了讓畫面好從寬)
+scale_factor = 1.2 
+pos_tgt = min(max(tgt_val / scale_factor * 100, 5), 95)
+pos_curr = min(max(curr_val / scale_factor * 100, 5), 95)
 
-st.markdown("---")
+# --- 修正重點：這裡的 HTML 完全沒有縮排，貼齊最左邊 ---
+st.markdown(f"""
+<div style="position: relative; width: 100%; height: 100px; background-color: #353b48; border-radius: 15px; margin: 40px 0; border: 3px solid #7f8fa6; box-shadow: inset 0 0 20px #000;">
+<div style="position: absolute; left: {pos_tgt}%; top: 15px; transform: translateX(-50%); text-align: center; z-index: 1;">
+<div style="font-size: 30px; line-height: 1;">🚩</div>
+<div style="color: #ff6b6b; font-weight: bold; font-size: 18px; background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 6px; margin-top: 5px;">{st.session_state.target}</div>
+</div>
+<div style="position: absolute; left: {pos_curr}%; top: 40px; transition: left 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform: translateX(-50%); z-index: 2;">
+<div style="font-size: 50px; filter: drop-shadow(0 0 10px #4cd137);">🚀</div>
+</div>
+<div style="position: absolute; bottom: 5px; left: 10px; color: #7f8fa6; font-size: 12px;">Start (0)</div>
+<div style="position: absolute; bottom: 5px; right: 10px; color: #7f8fa6; font-size: 12px;">End ({scale_factor})</div>
+</div>
+<div style="text-align: center; font-size: 20px; margin-bottom: 20px;">
+當前位置: <span style="color: #4cd137; font-weight: bold; font-size: 28px;">{st.session_state.current}</span>
+</div>
+""", unsafe_allow_html=True)
 
 st.write("### 🃏 你的手牌 (點擊出牌)")
 
 if not st.session_state.hand:
     if st.session_state.message != "🎉 捕獲成功！":
-        st.error("沒牌了！請重置")
+        st.error("任務失敗！")
         if st.button("🔄 重來"):
             reset_game()
             st.rerun()
 else:
+    # 增加手牌間距
     cols = st.columns(len(st.session_state.hand))
     for i, card in enumerate(st.session_state.hand):
         with cols[i]:
             is_diff = card.den != st.session_state.current.den
-            btn_label = f"{card.num}/{card.den}"
+            
+            # 按鈕文字內容
             if is_diff:
-                btn_label += " (⚡融合)"
-                help_text = "分母不同！點擊啟動自動通分魔法"
+                label = f"{card.num}/{card.den}\n⚡"
+                help_txt = "點擊進行通分"
             else:
-                help_text = "出牌移動"
+                label = f"{card.num}/{card.den}"
+                help_txt = "出牌"
 
-            # 這裡的 button 樣式現在會被上面的 CSS 控制
-            if st.button(btn_label, key=f"card_{card.id}", help=help_text, use_container_width=True):
+            if st.button(label, key=f"card_{card.id}", help=help_txt, use_container_width=True):
                 play_card(i)
                 st.rerun()
 
-with st.expander("📖 遊戲說明"):
-    st.write("""
-    1. 你的目標是控制火箭 🚀 停在旗幟 🚩 的位置。
-    2. 點擊手牌 🃏 來移動。
-    3. 如果卡片分母跟你不一樣（例如 1/2 和 1/4），點擊卡片會自動觸發 **「魔法融合」** (通分)，把它們變成一樣的分母！
-    4. 用最少的步數抓到目標！
+with st.expander("📖 玩法說明"):
+    st.markdown("""
+    1. **目標**：讓火箭 🚀 飛到旗幟 🚩 的位置。
+    2. **出牌**：點擊下方的白色卡片。
+    3. **⚡ 閃電符號**：表示這張牌的分母跟目前位置不一樣。點擊它會自動發動 **「通分魔法」**！
+    4. **負數**：分子是負數（例如 -1/4）會讓火箭往回飛。
     """)
