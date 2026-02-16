@@ -3,7 +3,17 @@ import random
 import math
 from fractions import Fraction
 from dataclasses import dataclass, field
-from typing import List, Tuple, Literal
+from typing import List, Literal
+
+# ==========================================
+# 0. 版本控制與自動修復 (關鍵修正)
+# ==========================================
+CURRENT_VERSION = "v5.1"
+
+# 如果發現版本不一致，強制清除舊資料，防止 AttributeError
+if st.session_state.get("system_version") != CURRENT_VERSION:
+    st.session_state.clear()
+    st.session_state.system_version = CURRENT_VERSION
 
 # ==========================================
 # 1. 頁面設定與 CSS
@@ -44,15 +54,16 @@ st.markdown("""
         background-color: #f38ba8; z-index: 10; box-shadow: 0 0 10px #f38ba8;
     }
 
-    /* 卡片樣式 */
+    /* 卡片樣式優化：解決亂碼與排版 */
     div.stButton > button {
         background-color: #cba6f7 !important;
         color: #181825 !important;
         border: none !important;
         border-radius: 8px !important;
-        font-size: 22px !important;
+        font-size: 24px !important; /* 字體加大 */
+        font-family: 'Arial', sans-serif !important;
         font-weight: bold !important;
-        height: 80px !important;
+        height: 70px !important;
         transition: all 0.2s !important;
     }
     div.stButton > button:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(203, 166, 247, 0.4); }
@@ -85,16 +96,17 @@ class Card:
 
     @property
     def display(self) -> str:
-        # 根據運算符號給予不同圖示
-        icon_map = {'+': '➕', '-': '➖', '*': '✖️', '/': '➗'}
-        return f"{icon_map[self.op]}\n{self.numerator}/{self.denominator}"
+        # 使用標準數學符號，避免亂碼
+        # 並且移除 \n 換行，改用空格，因為 Streamlit 按鈕對換行支援不穩
+        icon_map = {'+': '+', '-': '-', '*': '×', '/': '÷'}
+        return f"{icon_map[self.op]} {self.numerator}/{self.denominator}"
     
     @property
     def raw_display(self) -> str:
         return f"{self.op} {self.numerator}/{self.denominator}"
 
 # ==========================================
-# 3. 核心引擎 (支援多單元) v5.0
+# 3. 核心引擎
 # ==========================================
 
 class GameEngine:
@@ -104,23 +116,25 @@ class GameEngine:
             'level': 1, 'target': Fraction(1, 1), 'current': Fraction(0, 1),
             'start_val': Fraction(0, 1), 'hand': [], 'msg': "歡迎來到分數運算大師！",
             'game_state': 'playing', 'math_log': "", 'unit': "單元一：分數加減",
-            'history': [] # 記錄玩家的操作步驟
+            'history': [] 
         }
         for k, v in defaults.items():
             if k not in st.session_state:
                 st.session_state[k] = v
 
-    # --- 屬性存取 ---
+    # --- 屬性存取 (安全存取) ---
     @property
-    def level(self): return st.session_state.level
+    def level(self): return st.session_state.get('level', 1)
     @property
-    def unit(self): return st.session_state.unit
+    def unit(self): return st.session_state.get('unit', "單元一：分數加減")
     @property
-    def current(self): return st.session_state.current
+    def current(self): return st.session_state.get('current', Fraction(0, 1))
     @property
-    def target(self): return st.session_state.target
+    def target(self): return st.session_state.get('target', Fraction(1, 1))
     @property
-    def start_val(self): return st.session_state.start_val
+    def start_val(self): return st.session_state.get('start_val', Fraction(0, 1))
+    @property
+    def state(self): return st.session_state.get('game_state', 'playing')
 
     # --- 遊戲控制 ---
     def set_unit(self, unit_name):
@@ -131,9 +145,8 @@ class GameEngine:
 
     def start_level(self, level: int):
         st.session_state.level = level
-        st.session_state.history = [] # 清空歷史步驟
+        st.session_state.history = [] 
         
-        # 根據單元生成題目
         target, start_val, hand, title = self._generate_data(self.unit, level)
         
         st.session_state.target = target
@@ -150,55 +163,48 @@ class GameEngine:
         start_val = Fraction(0, 1)
         title = ""
         
-        # === 單元一：分數加減 (從 0 開始) ===
+        # === 單元一：分數加減 ===
         if unit == "單元一：分數加減":
             start_val = Fraction(0, 1)
             den_pool = [2, 4] if level <= 2 else [2, 3, 4, 6]
             steps = 2 + (level // 2)
-            allow_neg = level >= 3 # Lv3 開始有負數
+            allow_neg = level >= 3 
             
             current_val = start_val
             for _ in range(steps):
                 d = random.choice(den_pool)
                 n = random.choice([1, 1, 2])
                 op = '+'
-                
                 if allow_neg and random.random() < 0.3:
                     op = '-'
                 
-                # 構建卡牌
                 card = Card(n, d, op)
                 hand.append(card)
-                
-                # 計算目標
                 if op == '+': current_val += card.value
                 else: current_val -= card.value
             
             target = current_val
             title = f"Lv {level}: {'基礎加法' if not allow_neg else '加減混合'}"
 
-        # === 單元二：分數乘除 (從 1 開始) ===
+        # === 單元二：分數乘除 ===
         elif unit == "單元二：分數乘除":
-            start_val = Fraction(1, 1) # 乘除法通常從 1 開始
+            start_val = Fraction(1, 1)
             steps = 2 + (level // 3)
             
             current_val = start_val
             for _ in range(steps):
-                # 乘除法的數字設計要簡單一點，不然會變天文數字
                 if random.random() < 0.5:
-                    # 乘法：乘整數 或 簡單分數
                     op = '*'
                     if random.random() < 0.5:
-                        card = Card(random.choice([2, 3]), 1, op) # x2, x3
+                        card = Card(random.choice([2, 3]), 1, op) 
                     else:
-                        card = Card(1, random.choice([2, 3]), op) # x1/2, x1/3
+                        card = Card(1, random.choice([2, 3]), op) 
                 else:
-                    # 除法：除整數 (變小) 或 除分數 (變大)
                     op = '/'
                     if random.random() < 0.5:
-                        card = Card(random.choice([2, 4]), 1, op) # /2, /4
+                        card = Card(random.choice([2, 4]), 1, op) 
                     else:
-                        card = Card(1, 2, op) # / (1/2) = x2
+                        card = Card(1, 2, op) 
                 
                 hand.append(card)
                 if op == '*': current_val *= card.value
@@ -207,36 +213,32 @@ class GameEngine:
             target = current_val
             title = f"Lv {level}: 分數乘除變形"
 
-        # === 單元三：四則運算 (從 0 或 1 開始) ===
+        # === 單元三：四則運算 ===
         elif unit == "單元三：分數加減乘除":
             start_val = Fraction(0, 1)
             steps = 3 + (level // 3)
             current_val = start_val
             
-            # 第一張牌通常是加法，先給一個基數
             first_card = Card(1, random.choice([2, 3]), '+')
             hand.append(first_card)
             current_val += first_card.value
             
             for _ in range(steps - 1):
                 op = random.choice(['+', '-', '*', '/'])
-                
                 if op in ['+', '-']:
                     card = Card(1, random.choice([2, 4]), op)
                     if op == '+': current_val += card.value
                     else: current_val -= card.value
                 else:
-                    # 乘除盡量用整數，避免太複雜
                     card = Card(random.choice([2, 3]), 1, op)
                     if op == '*': current_val *= card.value
                     else: current_val /= card.value
-                
                 hand.append(card)
             
             target = current_val
             title = f"Lv {level}: 混合運算挑戰"
 
-        # 混入干擾牌 (所有單元都有)
+        # 混入干擾牌
         distractor_count = 1 if level < 3 else 2
         for _ in range(distractor_count):
             op = random.choice(['+', '-', '*', '/']) if unit == "單元三：分數加減乘除" else ('+' if unit=="單元一：分數加減" else '*')
@@ -246,7 +248,9 @@ class GameEngine:
         return target, start_val, hand, title
 
     def play_card(self, idx):
+        # 安全檢查：如果手牌索引無效或狀態不對，直接返回
         if self.state != 'playing': return
+        if not st.session_state.hand or idx >= len(st.session_state.hand): return
         
         card = st.session_state.hand.pop(idx)
         old_val = self.current
@@ -255,11 +259,12 @@ class GameEngine:
         if card.op == '+': new_val = old_val + card.value
         elif card.op == '-': new_val = old_val - card.value
         elif card.op == '*': new_val = old_val * card.value
-        elif card.op == '/': new_val = old_val / card.value
+        elif card.op == '/': 
+            if card.value == 0: new_val = old_val # 防止除以零
+            else: new_val = old_val / card.value
         
         st.session_state.current = new_val
         
-        # 記錄步驟
         st.session_state.history.append({
             'old': old_val, 'card': card, 'new': new_val
         })
@@ -275,10 +280,6 @@ class GameEngine:
         elif not st.session_state.hand:
             self._end_game('lost')
         else:
-            # 檢查是否還有機會 (簡單版：只提示距離)
-            if curr > tgt and self.unit == "單元一：分數加減":
-                 # 單元一特別提示：超過變色
-                 pass 
             st.session_state.msg = "🚀 計算中..."
 
     def _end_game(self, status):
@@ -302,9 +303,12 @@ class GameEngine:
             elif c.op == '*': op_str = "乘以"
             elif c.op == '/': op_str = "除以"
             
+            # 顯示符號優化
+            display_val = f"{c.numerator}/{c.denominator}"
+            
             html += f"""
             <div class='step-row'>
-                {step['old']} {op_str} <b>{c.value}</b> = {step['new']}
+                {step['old']} {op_str} <b>{display_val}</b> = {step['new']}
             </div>
             """
         
@@ -324,11 +328,18 @@ engine = GameEngine()
 # --- 側邊欄：單元選擇 ---
 with st.sidebar:
     st.title("📚 課程選單")
+    
+    # 使用 key 來避免狀態跑掉
     selected_unit = st.radio(
         "選擇學習單元：",
-        ["單元一：分數加減", "單元二：分數乘除", "單元三：分數加減乘除"]
+        ["單元一：分數加減", "單元二：分數乘除", "單元三：分數加減乘除"],
+        key="unit_selector"
     )
-    engine.set_unit(selected_unit)
+    
+    # 檢查是否切換單元
+    if selected_unit != engine.unit:
+        engine.set_unit(selected_unit)
+        st.rerun() # 強制刷新以應用新單元
     
     st.markdown("---")
     st.write(f"當前等級：Lv {engine.level}")
@@ -348,9 +359,8 @@ st.markdown(f"<div class='status-msg'>{st.session_state.msg}</div>", unsafe_allo
 # 視覺化進度
 tgt = engine.target
 curr = engine.current
-# 為了視覺化，設定一個合理的 Max 值
 max_val = max(float(tgt) * 1.5, 2.0)
-if max_val == 0: max_val = 1 # 避免除以0
+if max_val == 0: max_val = 1 
 
 tgt_pct = (float(tgt) / max_val) * 100
 curr_pct = min(max(0, (float(curr) / max_val) * 100), 100)
@@ -373,13 +383,14 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # 遊戲區
-if st.session_state.game_state == 'playing':
+if engine.state == 'playing':
     st.write("### 🎴 選擇運算卡牌")
     if st.session_state.hand:
         cols = st.columns(len(st.session_state.hand))
         for i, card in enumerate(st.session_state.hand):
             with cols[i]:
-                if st.button(card.display, key=f"c_{card.id}"):
+                # 這裡的 key 加上 op 確保唯一性，避免渲染錯誤
+                if st.button(card.display, key=f"c_{card.id}_{card.op}"):
                     engine.play_card(i)
                     st.rerun()
     else:
