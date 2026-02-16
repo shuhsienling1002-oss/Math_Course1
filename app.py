@@ -1,259 +1,284 @@
 import streamlit as st
-import time
-import math
 import random
+from fractions import Fraction
+from dataclasses import dataclass, field
+from typing import List, Tuple
 
 # ==========================================
-# 1. 遊戲設定與 CSS
+# 🏗️ Model Layer: 數學核心 (First Principles)
 # ==========================================
-st.set_page_config(page_title="Fraction Hunter", page_icon="🏹", layout="centered")
 
+@dataclass
+class Card:
+    numerator: int
+    denominator: int
+    id: int = field(default_factory=lambda: random.randint(10000, 99999))
+
+    @property
+    def value(self) -> Fraction:
+        return Fraction(self.numerator, self.denominator)
+
+    @property
+    def display(self) -> str:
+        return f"{self.numerator}/{self.denominator}"
+
+    def __repr__(self):
+        return self.display
+
+class GameEngine:
+    """
+    核心邏輯引擎 (High Cohesion)
+    負責所有數學運算、狀態判定與關卡生成。
+    完全不依賴 Streamlit UI，確保可測試性。
+    """
+    def __init__(self):
+        if 'level' not in st.session_state:
+            self.reset_game()
+    
+    @property
+    def level(self): return st.session_state.level
+    @property
+    def target(self): return st.session_state.target
+    @property
+    def current(self): return st.session_state.current
+    @property
+    def hand(self): return st.session_state.hand
+    @property
+    def message(self): return st.session_state.msg
+    @property
+    def state(self): return st.session_state.game_state # 'playing', 'won', 'lost'
+
+    def reset_game(self):
+        st.session_state.level = 1
+        self.start_level(1)
+
+    def start_level(self, level: int):
+        st.session_state.level = level
+        target, start_val, hand = self._generate_math_data(level)
+        st.session_state.target = target
+        st.session_state.current = start_val
+        st.session_state.hand = hand
+        st.session_state.game_state = 'playing'
+        st.session_state.msg = f"⚔️ Level {level}: 尋找平衡點！"
+
+    def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card]]:
+        """
+        生成關卡數據 (Procedural Generation)
+        依據難度曲線 (Progression) 動態生成
+        """
+        # 難度設定 (Complexity Thresholds)
+        if level == 1: den_pool = [2, 4]
+        elif level == 2: den_pool = [2, 3, 4, 6]
+        elif level <= 5: den_pool = [2, 3, 4, 5, 8]
+        else: den_pool = [3, 6, 7, 9, 12] # 高難度
+
+        # 1. 建構正確路徑 (The Happy Path)
+        target_val = Fraction(0, 1)
+        correct_hand = []
+        steps = random.randint(2, 3 + (level // 3))
+        
+        for _ in range(steps):
+            d = random.choice(den_pool)
+            n = random.choice([1, 1, 2])
+            card = Card(n, d)
+            correct_hand.append(card)
+            target_val += card.value
+
+        # 設定起點與目標 (Target needs to be reachable)
+        # 讓 Target 稍微大於 0，並讓 current 從 0 開始
+        target = target_val
+        current = Fraction(0, 1)
+
+        # 2. 注入熵 (Entropy Injection) - 干擾牌
+        distractor_count = random.randint(1, 2)
+        distractors = []
+        for _ in range(distractor_count):
+            d = random.choice(den_pool)
+            n = random.choice([1, 2]) # 故意放正數，讓玩家容易爆掉
+            distractors.append(Card(n, d))
+            
+        final_hand = correct_hand + distractors
+        random.shuffle(final_hand)
+        
+        return target, current, final_hand
+
+    def play_card(self, card_idx: int):
+        if st.session_state.game_state != 'playing': return
+
+        card = st.session_state.hand.pop(card_idx)
+        st.session_state.current += card.value
+        
+        # 觸發回饋迴路 (Feedback Loop)
+        self._check_win_condition()
+
+    def _check_win_condition(self):
+        curr = st.session_state.current
+        tgt = st.session_state.target
+        
+        if curr == tgt:
+            st.session_state.game_state = 'won'
+            st.session_state.msg = "🎉 完美平衡！(Perfect Equilibrium)"
+        elif curr > tgt:
+            st.session_state.game_state = 'lost'
+            st.session_state.msg = "💥 能量過載！你超過了目標值 (Entropy Overload)"
+        elif not st.session_state.hand:
+            st.session_state.game_state = 'lost'
+            st.session_state.msg = "💀 資源耗盡！沒有手牌了 (Resource Depletion)"
+        else:
+            # 計算剩餘距離，給予提示 (Bayesian Update hint)
+            diff = tgt - curr
+            st.session_state.msg = f"🚀 推進中... 還差 {diff}"
+
+    def next_level(self):
+        self.start_level(st.session_state.level + 1)
+
+    def retry_level(self):
+        self.start_level(st.session_state.level)
+
+# ==========================================
+# 🎨 View Layer: UI/UX (Streamlit)
+# ==========================================
+
+st.set_page_config(page_title="Zero-Entropy Fraction", page_icon="🧩", layout="centered")
+
+# CSS 優化：引入 Thumb Zone 與 Visual Hierarchy
 st.markdown("""
 <style>
-    .stApp {
-        background-color: #2b2d42;
-        color: white;
+    .stApp { background-color: #1e1e2e; color: #cdd6f4; }
+    
+    /* 遊戲區塊容器 */
+    .game-container {
+        background: #313244;
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 2px solid #45475a;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
     
-    /* 按鈕容器 */
+    /* 進度條背景 */
+    .progress-track {
+        background: #45475a;
+        height: 24px;
+        border-radius: 12px;
+        position: relative;
+        overflow: hidden;
+        margin: 20px 0;
+    }
+    
+    /* 進度條本身 */
+    .progress-fill {
+        background: linear-gradient(90deg, #89b4fa, #74c7ec);
+        height: 100%;
+        transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    
+    /* 目標標記 */
+    .target-marker {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background-color: #f38ba8;
+        z-index: 10;
+        box-shadow: 0 0 10px #f38ba8;
+    }
+
+    /* 卡片按鈕優化 */
     div.stButton > button {
-        background: linear-gradient(to bottom, #ffffff 0%, #f1f1f1 100%) !important;
-        border: 2px solid #ffffff !important;
-        border-radius: 12px !important;
-        padding: 12px 0px !important;
-        box-shadow: 0 4px 0 #999 !important;
-        width: 100%;
+        background-color: #cba6f7 !important;
+        color: #181825 !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-size: 20px !important;
+        font-weight: bold !important;
+        transition: all 0.2s !important;
     }
-
-    /* 按鈕文字 */
-    div.stButton > button, 
-    div.stButton > button p, 
-    div.stButton > button div,
-    div.stButton > button span {
-        color: #000000 !important; 
-        font-family: sans-serif !important;
-        font-weight: 800 !important;
-        font-size: 22px !important;
-    }
-
-    /* 懸停效果 */
     div.stButton > button:hover {
-        transform: translateY(2px) !important;
-        box-shadow: 0 2px 0 #666 !important;
-        background: #ffecd1 !important;
-        border-color: #ef233c !important;
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(203, 166, 247, 0.4);
+    }
+    div.stButton > button:active {
+        transform: translateY(1px);
     }
     
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    /* 狀態訊息 */
+    .status-msg {
+        font-size: 1.2rem;
+        text-align: center;
+        font-weight: bold;
+        color: #f9e2af;
+        margin-bottom: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. 核心邏輯 (加入干擾項)
-# ==========================================
+# 初始化引擎
+engine = GameEngine()
 
-class FractionCard:
-    def __init__(self, num, den):
-        self.num = num
-        self.den = den
-        self.id = random.randint(1000, 999999)
+# UI 渲染
+st.title(f"🧩 Zero-Entropy Fraction")
+st.markdown(f"<div class='status-msg'>{engine.message}</div>", unsafe_allow_html=True)
 
-    @property
-    def value(self):
-        return self.num / self.den
+# 1. 視覺化軌道 (Visual Feedback Loop)
+# 將分數轉換為百分比 (假設最大值為 Target * 1.5 以保留溢出空間)
+max_val = max(engine.target * Fraction(3, 2), Fraction(2, 1)) 
+curr_pct = min((engine.current / max_val) * 100, 100)
+tgt_pct = (engine.target / max_val) * 100
 
-    def __repr__(self):
-        return f"{self.num}/{self.den}"
-
-def gcd(a, b): return math.gcd(a, b)
-def lcm(a, b): return abs(a * b) // gcd(a, b)
-
-# 初始化狀態
-if 'level' not in st.session_state: st.session_state.level = 1
-if 'target' not in st.session_state: st.session_state.target = FractionCard(3, 4)
-if 'current' not in st.session_state: st.session_state.current = FractionCard(0, 4)
-if 'hand' not in st.session_state: 
-    st.session_state.hand = [FractionCard(1, 2), FractionCard(1, 4), FractionCard(1, 3)] # 初始含干擾
-if 'message' not in st.session_state: st.session_state.message = "🎮 第一關：小心！有些牌是多餘的！"
-
-def generate_level_data(level):
-    # 難度池
-    if level == 1: den_pool = [2, 4]
-    elif level == 2: den_pool = [3, 6]
-    elif level == 3: den_pool = [4, 8, 2]
-    else: den_pool = [2, 3, 4, 6]
-
-    correct_hand = []
-    total_num = 0
-    common_base = 24 
+st.markdown(f"""
+<div class="game-container">
+    <div style="display: flex; justify-content: space-between; font-family: monospace;">
+        <span>🏁 START: 0</span>
+        <span>🚩 TARGET: {engine.target}</span>
+    </div>
     
-    # 1. 生成「正確解」的組合 (2-3 張)
-    correct_count = random.randint(2, 3)
-    for _ in range(correct_count):
-        den = random.choice(den_pool)
-        num = random.choice([1, 1, 2]) # 盡量正數，簡單點
-        
-        current_val = total_num / common_base
-        # 簡單防呆
-        if current_val + (num/den) < 0: num = 1
-            
-        correct_hand.append(FractionCard(num, den))
-        
-        factor = common_base // den
-        total_num += num * factor
-
-    # 2. 計算目標 (基於正確解)
-    target_gcd = gcd(total_num, common_base)
-    target = FractionCard(total_num // target_gcd, common_base // target_gcd)
-    current = FractionCard(0, target.den) 
+    <div class="progress-track">
+        <div class="target-marker" style="left: {float(tgt_pct)}%;"></div>
+        <div class="progress-fill" style="width: {float(curr_pct)}%;"></div>
+    </div>
     
-    # 3. 🚨 生成「干擾牌」 (Distractors)
-    # 故意生成 1-2 張和正確解分母類似，但加上去會讓答案錯誤的牌
-    distractor_count = random.randint(1, 2)
-    distractors = []
-    for _ in range(distractor_count):
-        d_den = random.choice(den_pool)
-        d_num = random.choice([1, -1])
-        distractors.append(FractionCard(d_num, d_den))
-        
-    # 合併並洗牌
-    final_hand = correct_hand + distractors
-    random.shuffle(final_hand)
-    
-    return target, current, final_hand
+    <div style="text-align: center; font-size: 24px; font-weight: bold;">
+        當前總和: <span style="color: #89b4fa;">{engine.current}</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-def next_level():
-    st.session_state.level += 1
-    t, c, h = generate_level_data(st.session_state.level)
-    st.session_state.target = t
-    st.session_state.current = c
-    st.session_state.hand = h
-    st.session_state.message = f"🚀 進入第 {st.session_state.level} 關！(注意陷阱牌)"
-    st.balloons()
+# 2. 手牌區 (Interaction Layer)
+# 使用 Container 分隔，避免重新渲染時跳動
+st.write("### 🎴 你的策略手牌")
 
-def play_card(idx):
-    card = st.session_state.hand[idx]
-    current = st.session_state.current
-    
-    # 通分邏輯
-    if card.den != current.den:
-        common_den = lcm(card.den, current.den)
-        st.session_state.message = f"⚡ 融合：{current.den} 與 {card.den} -> {common_den}"
-        
-        factor_curr = common_den // current.den
-        current.num *= factor_curr
-        current.den = common_den
-        
-        factor_card = common_den // card.den
-        card.num *= factor_card
-        card.den = common_den
-        
-        time.sleep(0.2)
-        st.rerun()
-        return
-
-    # 出牌
-    st.session_state.hand.pop(idx)
-    st.session_state.current.num += card.num
-    
-    check_win()
-
-def check_win():
-    curr = st.session_state.current
-    tgt = st.session_state.target
-    
-    # 交叉相乘判斷相等
-    if curr.num * tgt.den == tgt.num * curr.den:
-        st.session_state.message = "🎉 任務完成！"
-        next_level()
-    elif len(st.session_state.hand) == 0:
-        # 手牌打完了但沒贏 -> 玩家選錯了組合
-        st.session_state.message = "💀 任務失敗！你選到了干擾牌...(請重置)"
-    else:
-        # 檢查是否已經超過目標 (簡單提示)
-        if curr.value > tgt.value:
-             st.session_state.message = "⚠️ 飛過頭了！(看看有沒有負數牌可以拉回來)"
-        else:
-             st.session_state.message = "🚀 飛行中..."
-
-def reset_current_level():
-    t, c, h = generate_level_data(st.session_state.level)
-    st.session_state.target = t
-    st.session_state.current = c
-    st.session_state.hand = h
-    st.session_state.message = "🔄 關卡重置"
-
-# ==========================================
-# 3. UI 渲染
-# ==========================================
-
-st.title(f"🏹 分數獵人 Level {st.session_state.level}")
-st.info(st.session_state.message)
-
-curr_val = st.session_state.current.value
-tgt_val = st.session_state.target.value
-
-track_scale = max(tgt_val * 1.5, 2.0)
-pos_tgt = min(max(tgt_val / track_scale * 100, 2), 95)
-pos_curr = min(max(curr_val / track_scale * 100, 2), 95)
-
-# 字串拼接 HTML (最穩定的渲染方式)
-game_html = ""
-game_html += f'<div style="position: relative; width: 100%; height: 120px; background-color: #353b48; border-radius: 15px; margin: 20px 0; border: 3px solid #7f8fa6; overflow: hidden;">'
-game_html += f'  <div style="position: absolute; width: 100%; height: 100%; background: repeating-linear-gradient(90deg, transparent, transparent 19%, #444 20%); opacity: 0.3;"></div>'
-game_html += f'  <div style="position: absolute; bottom: 5px; left: 10px; color: #aaa; font-size: 12px;">0</div>'
-game_html += f'  <div style="position: absolute; bottom: 5px; right: 10px; color: #aaa; font-size: 12px;">{track_scale:.1f}</div>'
-game_html += f'  <div style="position: absolute; left: {pos_tgt}%; top: 20px; transform: translateX(-50%); text-align: center; z-index: 1;">'
-game_html += f'    <div style="font-size: 30px; line-height: 1;">🚩</div>'
-game_html += f'    <div style="background: rgba(239, 35, 60, 0.8); color: white; padding: 2px 6px; border-radius: 4px; font-size: 14px; margin-top: 5px;">{st.session_state.target}</div>'
-game_html += f'  </div>'
-game_html += f'  <div style="position: absolute; left: {pos_curr}%; top: 60px; transition: left 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); transform: translateX(-50%); z-index: 2; text-align: center;">'
-game_html += f'    <div style="font-size: 40px; filter: drop-shadow(0 0 10px #4cd137); transform: rotate(90deg);">🚀</div>'
-game_html += f'  </div>'
-game_html += f'</div>'
-game_html += f'<div style="text-align: center; margin-bottom: 20px;">'
-game_html += f'  <span style="color: #bbb; font-size: 18px;">當前位置: </span>'
-game_html += f'  <span style="color: #4cd137; font-weight: bold; font-size: 32px;">{st.session_state.current}</span>'
-game_html += f'</div>'
-
-st.markdown(game_html, unsafe_allow_html=True)
-
-st.write("### 🃏 你的手牌 (確認後，點2下！)")
-
-if not st.session_state.hand:
-    if "成功" not in st.session_state.message:
-        st.error("任務失敗！(手牌用完了但沒對上)")
-        if st.button("🔄 重置本關"):
-            reset_current_level()
-            st.rerun()
-else:
-    cols = st.columns(len(st.session_state.hand))
-    for i, card in enumerate(st.session_state.hand):
+if engine.state == 'playing':
+    cols = st.columns(len(engine.hand)) if engine.hand else [st.empty()]
+    for i, card in enumerate(engine.hand):
         with cols[i]:
-            is_diff = card.den != st.session_state.current.den
-            
-            if is_diff:
-                label = f"{card.num}/{card.den} ⚡"
-                help_txt = "分母不同！點擊通分"
-            else:
-                label = f"{card.num}/{card.den}"
-                help_txt = "移動"
-            
-            if st.button(label, key=f"card_{card.id}", help=help_txt, use_container_width=True):
-                play_card(i)
+            # Tooltip 顯示小數值，輔助決策 (Auxiliary Info)
+            if st.button(f"{card.display}", key=f"btn_{card.id}", help=f"值約為 {float(card.value):.2f}"):
+                engine.play_card(i)
+                st.rerun()
+else:
+    # 遊戲結束狀態處理
+    result_col1, result_col2 = st.columns(2)
+    with result_col1:
+        if engine.state == 'won':
+            if st.button("🚀 下一關 (Next Level)", type="primary", use_container_width=True):
+                engine.next_level()
+                st.rerun()
+        else:
+            if st.button("🔄 再試一次 (Retry)", type="secondary", use_container_width=True):
+                engine.retry_level()
                 st.rerun()
 
-st.markdown("---")
-if st.button("🎲 換一題"):
-    reset_current_level()
-    st.rerun()
-
-with st.expander("📖 玩法說明"):
+# 3. 側邊欄與說明 (Meta Info)
+with st.sidebar:
+    st.markdown("### 📊 遊戲數據")
+    st.write(f"當前關卡: **{engine.level}**")
+    st.progress(min(engine.level / 10, 1.0))
+    
+    st.markdown("---")
     st.markdown("""
-    1. **目標**：讓火箭 🚀 數值**剛好等於**旗幟 🚩。
-    2. **陷阱**：**不要把牌全打出去！** 裡面混了 1~2 張多餘的干擾牌。你必須計算並選擇正確的組合。
-    3. **⚡ 通分**：如果手牌分母和火箭不同，點擊會先進行「融合」通分。
+    **玩法說明 (Zero-Entropy):**
+    1. **目標**: 讓藍色進度條剛好停在紅線上。
+    2. **陷阱**: 手牌中混有「雜訊牌」，全部打出會爆掉！
+    3. **策略**: 計算並選擇正確的組合 (納什均衡)。
     """)
-
