@@ -162,25 +162,23 @@ class Card:
 
     @property
     def display(self) -> str:
-        # 顯示時加上正負號圖示
         icon = "🟥" if self.is_negative else "🟦"
         return f"{icon} {self.numerator}/{self.denominator}"
     
     @property
     def raw_display(self) -> str:
-        # 純文字顯示 (用於數學計算區)
         return f"{self.numerator}/{self.denominator}"
 
     def __repr__(self):
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 智能判定版 v3.2
+# 3. 核心引擎 (Game Engine) - 循序漸進版 v4.0
 # ==========================================
 
 class GameEngine:
     def __init__(self):
-        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback_header', 'math_log', 'correct_hand_cache']
+        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback_header', 'math_log', 'correct_hand_cache', 'level_title']
         if any(key not in st.session_state for key in required_keys):
             self.reset_game()
     
@@ -200,6 +198,8 @@ class GameEngine:
     def feedback_header(self): return st.session_state.get('feedback_header', "")
     @property
     def math_log(self): return st.session_state.get('math_log', "")
+    @property
+    def level_title(self): return st.session_state.get('level_title', "")
 
     def reset_game(self):
         st.session_state.level = 1
@@ -210,7 +210,7 @@ class GameEngine:
         
         # 嘗試生成直到目標大於 0
         while True:
-            target, start_val, hand, correct_subset = self._generate_math_data(level)
+            target, start_val, hand, correct_subset, title = self._generate_math_data(level)
             if target > 0:
                 break
         
@@ -218,39 +218,71 @@ class GameEngine:
         st.session_state.current = start_val
         st.session_state.hand = hand
         st.session_state.correct_hand_cache = correct_subset
+        st.session_state.level_title = title
         
         st.session_state.game_state = 'playing'
-        
-        if level >= 3:
-            st.session_state.msg = f"⚔️ 第 {level} 關: 小心！出現負數牌了 (🟥)"
-        else:
-            st.session_state.msg = f"⚔️ 第 {level} 關: 目標是湊出指定分數！"
-            
+        st.session_state.msg = f"⚔️ 第 {level} 關：{title}"
         st.session_state.feedback_header = "" 
         st.session_state.math_log = ""
 
-    def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card], List[Card]]:
-        # 難度設定
-        if level == 1: den_pool = [2, 4]
-        elif level == 2: den_pool = [2, 3, 4, 6]
-        elif level <= 5: den_pool = [2, 3, 4, 5, 8]
-        else: den_pool = [3, 6, 7, 9, 12]
-
+    def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card], List[Card], str]:
+        """
+        難度曲線設計 (Difficulty Curve)
+        """
         target_val = Fraction(0, 1)
         correct_hand = []
-        steps = random.randint(2, 3 + (level // 3))
+        allow_negative = False
+        level_title = ""
         
-        # 是否允許負數 (Level 3 開始)
-        allow_negative = level >= 3
-        
-        # 1. 先生產正確答案
+        # --- 階段一：純加法暖身 ---
+        if level == 1:
+            den_pool = [2] # 極簡：只有 1/2
+            steps = 2
+            level_title = "暖身運動 (同分母加法)"
+        elif level == 2:
+            den_pool = [2, 4] # 簡單：2和4
+            steps = 2
+            level_title = "基礎通分 (2與4)"
+        elif level == 3:
+            den_pool = [2, 3, 4, 6] # 進階：加入3和6
+            steps = 3
+            level_title = "進階通分 (尋找公倍數)"
+            
+        # --- 階段二：負數覺醒 (分母變簡單，專注於負號) ---
+        elif level == 4:
+            den_pool = [2, 4] # 回歸簡單分母
+            steps = 3
+            allow_negative = True # 開啟負數
+            level_title = "逆向思考 (引入負數🟥)"
+        elif level == 5:
+            den_pool = [2, 5, 10] # 簡單的十進位感覺
+            steps = 3
+            allow_negative = True
+            level_title = "加減混合 (注意符號)"
+            
+        # --- 階段三：完全體 (複雜分母 + 負數) ---
+        elif level <= 7:
+            den_pool = [2, 3, 4, 5, 6]
+            steps = 4
+            allow_negative = True
+            level_title = "綜合挑戰 (多項運算)"
+        else:
+            den_pool = [3, 6, 7, 9, 12] # 大魔王
+            steps = 4
+            allow_negative = True
+            level_title = "極限運算 (大師級)"
+
+        # 1. 生產正確答案
         for _ in range(steps):
             d = random.choice(den_pool)
             n = random.choice([1, 1, 2])
             
-            # 30% 機率變成負數
-            if allow_negative and random.random() < 0.3:
-                n = -n
+            # 負數邏輯：Level 4+ 才有，且機率逐漸增加
+            if allow_negative:
+                # Level 4 為了教學，機率高一點，確保玩家遇到
+                prob = 0.5 if level == 4 else 0.3
+                if random.random() < prob:
+                    n = -n
                 
             card = Card(n, d)
             correct_hand.append(card)
@@ -266,7 +298,6 @@ class GameEngine:
             d = random.choice(den_pool)
             n = random.choice([1, 2])
             
-            # 干擾牌也有可能是負數
             if allow_negative and random.random() < 0.4:
                 n = -n
                 
@@ -275,7 +306,7 @@ class GameEngine:
         final_hand = correct_hand + distractors
         random.shuffle(final_hand)
         
-        return target, current, final_hand, correct_hand
+        return target, current, final_hand, correct_hand, level_title
 
     def play_card(self, card_idx: int):
         if self.state != 'playing': return
@@ -290,27 +321,19 @@ class GameEngine:
         tgt = st.session_state.get('target', Fraction(1, 1))
         hand = st.session_state.get('hand', [])
         
-        # 檢查手牌中是否還有負數牌 (救命稻草)
         has_negative_cards = any(c.numerator < 0 for c in hand)
         
         if curr == tgt:
             self._trigger_end_game('won')
-            
         elif curr > tgt:
-            # 情況 A: 超過目標，但還有負數牌可以救
             if has_negative_cards:
                 diff = curr - tgt
                 st.session_state.msg = f"⚠️ 超過了 {diff}！快用紅色負數牌修正！"
-            # 情況 B: 超過目標，且手上只剩正數牌 (死局)
             else:
                 self._trigger_end_game('lost_over')
-                
         elif not hand:
-            # 情況 C: 手牌用完，未達目標
             self._trigger_end_game('lost_empty')
-            
         else:
-            # 情況 D: 正常推進中
             diff = tgt - curr
             st.session_state.msg = f"🚀 計算中... 距離目標還差 {diff}"
 
@@ -330,12 +353,8 @@ class GameEngine:
         st.session_state.math_log = self._generate_step_by_step_solution(st.session_state.correct_hand_cache)
 
     def _generate_step_by_step_solution(self, cards: List[Card]) -> str:
-        """
-        生成 HTML 格式的解題步驟 (支援負數括號顯示)
-        """
         if not cards: return "無解"
         
-        # 生成正確手牌的 HTML 區塊 (區分顏色)
         hand_html = ""
         for c in cards:
             css_class = "mini-card negative" if c.is_negative else "mini-card"
@@ -355,7 +374,6 @@ class GameEngine:
             expanded_num = c.numerator * factor
             total_numerator += expanded_num
             
-            # 顯示邏輯：如果是負數，加上括號
             display_num = f"({expanded_num})" if expanded_num < 0 else str(expanded_num)
             
             if factor > 1:
@@ -365,7 +383,6 @@ class GameEngine:
             
             numerators_sum_str.append(display_num)
             
-        # 構建 HTML 字串
         html = f"""
 <div class="math-steps">
 <span class="math-step-title">💡 正確的卡牌組合是：</span>
@@ -390,7 +407,6 @@ class GameEngine:
 </div>
 </div>
 """
-        
         final_frac = Fraction(total_numerator, lcm)
         if final_frac.denominator != lcm:
             html += f"""
@@ -402,7 +418,6 @@ class GameEngine:
 </div>
 </div>
 """
-        
         html += "</div>"
         return html
 
@@ -425,11 +440,9 @@ st.markdown(f"<div class='status-msg'>{engine.message}</div>", unsafe_allow_html
 target_val = engine.target if engine.target > 0 else Fraction(1, 1)
 max_val = max(target_val * Fraction(3, 2), Fraction(2, 1)) 
 
-# 處理負數進度條
 curr_pct = max(0, min((engine.current / max_val) * 100, 100))
 tgt_pct = (engine.target / max_val) * 100
 
-# 判斷是否超過目標 (用於改變顏色)
 is_overshot = engine.current > engine.target
 fill_class = "progress-fill warning" if is_overshot else "progress-fill"
 
@@ -457,7 +470,6 @@ if engine.state == 'playing':
         cols = st.columns(len(engine.hand))
         for i, card in enumerate(engine.hand):
             with cols[i]:
-                # 根據正負號給予不同提示
                 help_text = "這是一張負數牌，會扣分！" if card.is_negative else "這是一張正數牌，會加分！"
                 if st.button(f"{card.display}", key=f"btn_{card.id}", help=help_text):
                     engine.play_card(i)
@@ -466,19 +478,14 @@ if engine.state == 'playing':
         st.info("手牌已空，正在結算...")
 
 else:
-    # --- 遊戲結束結算區 ---
     st.markdown("---")
-    
-    # 1. 狀態條
     if engine.state == 'won':
         st.success(engine.feedback_header)
     else:
         st.error(engine.feedback_header)
     
-    # 2. 數學推導
     st.markdown(engine.math_log, unsafe_allow_html=True)
     
-    # 操作按鈕
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if engine.state == 'won':
@@ -492,19 +499,15 @@ else:
 
 # 3. 側邊欄
 with st.sidebar:
-    st.markdown("### 📊 遊戲數據")
-    st.write(f"當前關卡: **{engine.level}**")
+    st.markdown("### 📊 關卡資訊")
+    st.write(f"關卡 **{engine.level}**")
+    st.write(f"**{engine.level_title}**")
     st.progress(min(engine.level / 10, 1.0))
     
     st.markdown("---")
     st.markdown("""
-    **玩法說明:**
-    1. **目標**: 讓藍色進度條剛好停在粉紅線上。
-    2. **正負數**: 
-       - 🟦 藍色牌是 **加分**。
-       - 🟥 紅色牌是 **扣分** (負數)。
-    3. **策略**: 
-       - 如果超過目標，進度條會變 **橘色**。
-       - 這時必須打出 **紅牌** 才能救回來！
-       - 如果沒有紅牌了，就會直接爆掉喔。
+    **學習重點:**
+    *   **Lv 1-3**: 練習通分與加法。
+    *   **Lv 4-5**: 練習負數減法 (紅牌)。
+    *   **Lv 6+**: 綜合運算挑戰。
     """)
