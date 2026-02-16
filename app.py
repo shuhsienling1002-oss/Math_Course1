@@ -79,14 +79,26 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* 數學推導區塊 */
+    /* 數學推導區塊優化 */
     .math-steps {
         background-color: #313244;
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px dashed #6c7086;
-        margin-top: 10px;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #89b4fa;
+        margin-top: 15px;
         font-family: 'Courier New', monospace;
+        color: #cdd6f4;
+        line-height: 1.6;
+    }
+    .math-step-title {
+        font-weight: bold;
+        color: #f9e2af;
+        margin-bottom: 5px;
+        display: block;
+    }
+    .math-list {
+        margin: 5px 0 15px 20px;
+        padding: 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -113,21 +125,16 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 白盒推導版 v2.2
+# 3. 核心引擎 (Game Engine) - 渲染修復版 v2.3
 # ==========================================
 
 class GameEngine:
-    """
-    核心邏輯引擎 (High Cohesion)
-    負責所有數學運算、狀態判定與關卡生成。
-    """
     def __init__(self):
-        # 初始化檢查：如果 session_state 缺少關鍵變數，強制重置
-        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback', 'correct_hand_cache']
+        # 新增 math_log 用於存儲獨立的 HTML 內容
+        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback_header', 'math_log', 'correct_hand_cache']
         if any(key not in st.session_state for key in required_keys):
             self.reset_game()
     
-    # 屬性讀取
     @property
     def level(self): return st.session_state.get('level', 1)
     @property
@@ -140,10 +147,12 @@ class GameEngine:
     def message(self): return st.session_state.get('msg', "系統載入中...")
     @property
     def state(self): return st.session_state.get('game_state', 'playing')
+    
+    # 將標題與內容分開
     @property
-    def feedback(self): return st.session_state.get('feedback', "")
+    def feedback_header(self): return st.session_state.get('feedback_header', "")
     @property
-    def correct_hand(self): return st.session_state.get('correct_hand_cache', [])
+    def math_log(self): return st.session_state.get('math_log', "")
 
     def reset_game(self):
         st.session_state.level = 1
@@ -151,29 +160,24 @@ class GameEngine:
 
     def start_level(self, level: int):
         st.session_state.level = level
-        # 生成數據並緩存正確答案
         target, start_val, hand, correct_subset = self._generate_math_data(level)
         
         st.session_state.target = target
         st.session_state.current = start_val
         st.session_state.hand = hand
-        st.session_state.correct_hand_cache = correct_subset # 緩存以供推導使用
+        st.session_state.correct_hand_cache = correct_subset
         
         st.session_state.game_state = 'playing'
         st.session_state.msg = f"⚔️ 第 {level} 關: 尋找平衡點！"
-        st.session_state.feedback = "" 
+        st.session_state.feedback_header = "" 
+        st.session_state.math_log = ""
 
     def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card], List[Card]]:
-        """
-        生成關卡數據 (Procedural Generation)
-        """
-        # 難度設定
         if level == 1: den_pool = [2, 4]
         elif level == 2: den_pool = [2, 3, 4, 6]
         elif level <= 5: den_pool = [2, 3, 4, 5, 8]
         else: den_pool = [3, 6, 7, 9, 12]
 
-        # 1. 建構正確路徑
         target_val = Fraction(0, 1)
         correct_hand = []
         steps = random.randint(2, 3 + (level // 3))
@@ -185,11 +189,9 @@ class GameEngine:
             correct_hand.append(card)
             target_val += card.value
 
-        # 設定起點與目標
         target = target_val
         current = Fraction(0, 1)
 
-        # 2. 注入熵 (干擾牌)
         distractor_count = random.randint(1, 2)
         distractors = []
         for _ in range(distractor_count):
@@ -204,15 +206,10 @@ class GameEngine:
 
     def play_card(self, card_idx: int):
         if self.state != 'playing': return
-        
-        # 安全檢查
-        if not st.session_state.get('hand') or card_idx >= len(st.session_state.hand):
-            return
+        if not st.session_state.get('hand') or card_idx >= len(st.session_state.hand): return
 
         card = st.session_state.hand.pop(card_idx)
         st.session_state.current += card.value
-        
-        # 觸發回饋迴路
         self._check_win_condition()
 
     def _check_win_condition(self):
@@ -230,40 +227,34 @@ class GameEngine:
             st.session_state.msg = f"🚀 推進中... 還差 {diff}"
 
     def _trigger_end_game(self, status):
-        """
-        統一處理遊戲結束邏輯
-        """
         st.session_state.game_state = 'won' if status == 'won' else 'lost'
         
-        # 生成數學推導步驟
-        math_steps = self._generate_step_by_step_solution(st.session_state.correct_hand_cache)
-        
+        # 1. 設定短標題 (用於 st.success/error)
         if status == 'won':
-            st.session_state.msg = "🎉 完美平衡！(Perfect Equilibrium)"
-            st.session_state.feedback = f"### ✅ 驗算成功\n你找到了正確的組合！讓我們看看數學原理：\n\n{math_steps}"
+            st.session_state.msg = "🎉 完美平衡！"
+            st.session_state.feedback_header = "✅ 驗算成功！你找到了正確的組合。"
         elif status == 'lost_over':
-            st.session_state.msg = "💥 能量過載！(Entropy Overflow)"
-            st.session_state.feedback = f"### ❌ 誤差分析\n總和超過了目標。正確的解法應該是：\n\n{math_steps}"
+            st.session_state.msg = "💥 能量過載！"
+            st.session_state.feedback_header = "❌ 誤差分析：總和超過了目標。"
         elif status == 'lost_empty':
-            st.session_state.msg = "💀 資源耗盡！(Resource Depleted)"
-            st.session_state.feedback = f"### ❌ 誤差分析\n手牌用光了但未達目標。正確的解法應該是：\n\n{math_steps}"
+            st.session_state.msg = "💀 資源耗盡！"
+            st.session_state.feedback_header = "❌ 誤差分析：手牌用盡但未達目標。"
+
+        # 2. 生成詳細 HTML (用於 st.markdown)
+        st.session_state.math_log = self._generate_step_by_step_solution(st.session_state.correct_hand_cache)
 
     def _generate_step_by_step_solution(self, cards: List[Card]) -> str:
         """
-        生成詳細的通分與計算步驟 (The White-Box Logic)
+        生成 HTML 格式的解題步驟，使用 <ul> <li> 確保排版整潔
         """
         if not cards: return "無解"
         
-        # 1. 找出所有分母
         denoms = [c.denominator for c in cards]
-        
-        # 2. 計算最小公倍數 (LCM)
         lcm = denoms[0]
         for d in denoms[1:]:
             lcm = (lcm * d) // math.gcd(lcm, d)
             
-        # 3. 生成擴分步驟
-        expansion_steps = []
+        expansion_items = ""
         numerators_sum_str = []
         total_numerator = 0
         
@@ -273,32 +264,42 @@ class GameEngine:
             total_numerator += expanded_num
             
             if factor > 1:
-                expansion_steps.append(f"- **{c.display}** 擴分 (×{factor}) → **{expanded_num}/{lcm}**")
+                expansion_items += f"<li><b>{c.display}</b> 擴分 (×{factor}) → <b>{expanded_num}/{lcm}</b></li>"
             else:
-                expansion_steps.append(f"- **{c.display}** (無需擴分) → **{expanded_num}/{lcm}**")
+                expansion_items += f"<li><b>{c.display}</b> (無需擴分) → <b>{expanded_num}/{lcm}</b></li>"
             
             numerators_sum_str.append(str(expanded_num))
             
-        # 4. 組合最終字串
-        step1 = f"**Step 1: 尋找公分母**\n分母 {denoms} 的最小公倍數是 **{lcm}**。"
-        step2 = f"**Step 2: 通分變形**\n" + "\n".join(expansion_steps)
-        step3 = f"**Step 3: 分子加總**\n"
-        step3 += f"$$ \\frac{{{' + '.join(numerators_sum_str)}}}{{{lcm}}} = \\frac{{{total_numerator}}}{{{lcm}}} $$"
+        # 構建 HTML 字串
+        html = f"""
+        <div class="math-steps">
+            <span class="math-step-title">Step 1: 尋找公分母</span>
+            <div style="margin-left: 20px;">
+                分母 {denoms} 的最小公倍數是 <b>{lcm}</b>。
+            </div>
+            <br>
+            <span class="math-step-title">Step 2: 通分變形</span>
+            <ul class="math-list">
+                {expansion_items}
+            </ul>
+            <span class="math-step-title">Step 3: 分子加總</span>
+            <div style="margin-left: 20px;">
+                $$ \\frac{{{' + '.join(numerators_sum_str)}}}{{{lcm}}} = \\frac{{{total_numerator}}}{{{lcm}}} $$
+            </div>
+        """
         
-        # 檢查是否需要約分
         final_frac = Fraction(total_numerator, lcm)
         if final_frac.denominator != lcm:
-            step3 += f"\n\n**Step 4: 約分 (最終答案)**\n$$ \\frac{{{total_numerator}}}{{{lcm}}} = {final_frac.numerator}/{final_frac.denominator} $$"
-            
-        return f"""
-<div class="math-steps">
-{step1}
-<br><br>
-{step2}
-<br><br>
-{step3}
-</div>
-"""
+            html += f"""
+            <br>
+            <span class="math-step-title">Step 4: 約分 (最終答案)</span>
+            <div style="margin-left: 20px;">
+                $$ \\frac{{{total_numerator}}}{{{lcm}}} = {final_frac.numerator}/{final_frac.denominator} $$
+            </div>
+            """
+        
+        html += "</div>"
+        return html
 
     def next_level(self):
         self.start_level(self.level + 1)
@@ -310,13 +311,12 @@ class GameEngine:
 # 4. UI 渲染層 (View Layer)
 # ==========================================
 
-# 初始化引擎
 engine = GameEngine()
 
 st.title(f"🧩 零熵分數挑戰")
 st.markdown(f"<div class='status-msg'>{engine.message}</div>", unsafe_allow_html=True)
 
-# 1. 視覺化軌道 (Visual Feedback Loop)
+# 1. 視覺化軌道
 target_val = engine.target if engine.target > 0 else Fraction(1, 1)
 max_val = max(target_val * Fraction(3, 2), Fraction(2, 1)) 
 
@@ -340,7 +340,7 @@ html_content = f"""
 """
 st.markdown(html_content, unsafe_allow_html=True)
 
-# 2. 遊戲互動區 (Interaction Layer)
+# 2. 遊戲互動區
 if engine.state == 'playing':
     st.write("### 🎴 你的策略手牌")
     if engine.hand:
@@ -354,14 +354,19 @@ if engine.state == 'playing':
         st.info("手牌已空，正在結算...")
 
 else:
-    # --- 遊戲結束結算區 (Game Over / Win UI) ---
+    # --- 遊戲結束結算區 ---
     st.markdown("---")
     
-    # 顯示戰術回饋 (Tactical Feedback)
+    # [關鍵修正]：分開渲染
+    # 1. 顯示簡單的狀態條 (Success/Error Box)
     if engine.state == 'won':
-        st.success(f"{engine.feedback}")
+        st.success(engine.feedback_header)
     else:
-        st.error(f"{engine.feedback}")
+        st.error(engine.feedback_header)
+    
+    # 2. 顯示複雜的數學推導 (HTML Renderer)
+    # 這裡使用 unsafe_allow_html=True 才能正確顯示 <div> 和 <ul>
+    st.markdown(engine.math_log, unsafe_allow_html=True)
     
     # 操作按鈕
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -375,7 +380,7 @@ else:
                 engine.retry_level()
                 st.rerun()
 
-# 3. 側邊欄與說明
+# 3. 側邊欄
 with st.sidebar:
     st.markdown("### 📊 遊戲數據")
     st.write(f"當前關卡: **{engine.level}**")
