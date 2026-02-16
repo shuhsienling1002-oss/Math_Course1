@@ -77,6 +77,16 @@ st.markdown("""
         color: #f9e2af;
         margin-bottom: 10px;
     }
+    
+    /* 戰術分析區塊 */
+    .tactical-feedback {
+        background-color: #45475a;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #f9e2af;
+        margin-top: 15px;
+        font-size: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -102,23 +112,22 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 防呆機制 v2
+# 3. 核心引擎 (Game Engine) - 戰術增強版 v2.1
 # ==========================================
 
 class GameEngine:
     """
     核心邏輯引擎 (High Cohesion)
     負責所有數學運算、狀態判定與關卡生成。
-    完全不依賴 Streamlit UI，確保可測試性。
     """
     def __init__(self):
         # 初始化檢查：如果 session_state 缺少關鍵變數，強制重置
-        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state']
-        # 使用更嚴格的檢查，如果缺少任何一個 key 就重置
+        # 新增 feedback 與 solution_str 以支援戰術分析
+        required_keys = ['level', 'target', 'current', 'hand', 'msg', 'game_state', 'feedback', 'solution_str']
         if any(key not in st.session_state for key in required_keys):
             self.reset_game()
     
-    # 所有的屬性讀取都使用 .get()，這是防止紅字錯誤的關鍵
+    # 所有的屬性讀取都使用 .get()
     @property
     def level(self): return st.session_state.get('level', 1)
     
@@ -137,22 +146,37 @@ class GameEngine:
     @property
     def state(self): return st.session_state.get('game_state', 'playing')
 
+    @property
+    def feedback(self): return st.session_state.get('feedback', "")
+
+    @property
+    def solution_str(self): return st.session_state.get('solution_str', "")
+
     def reset_game(self):
         st.session_state.level = 1
         self.start_level(1)
 
     def start_level(self, level: int):
         st.session_state.level = level
-        target, start_val, hand = self._generate_math_data(level)
+        # 這裡我們同時接收正確的組合路徑 (correct_subset)
+        target, start_val, hand, correct_subset = self._generate_math_data(level)
+        
         st.session_state.target = target
         st.session_state.current = start_val
         st.session_state.hand = hand
+        
+        # 預先格式化正確答案，供結算使用 (例如: "1/2 + 1/4")
+        sol_str = " + ".join([c.display for c in correct_subset])
+        st.session_state.solution_str = sol_str
+        
         st.session_state.game_state = 'playing'
         st.session_state.msg = f"⚔️ 第 {level} 關: 尋找平衡點！"
+        st.session_state.feedback = "" # 清空上一關的回饋
 
-    def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card]]:
+    def _generate_math_data(self, level: int) -> Tuple[Fraction, Fraction, List[Card], List[Card]]:
         """
         生成關卡數據 (Procedural Generation)
+        現在會返回正確的手牌組合供分析使用
         """
         # 難度設定
         if level == 1: den_pool = [2, 4]
@@ -187,7 +211,7 @@ class GameEngine:
         final_hand = correct_hand + distractors
         random.shuffle(final_hand)
         
-        return target, current, final_hand
+        return target, current, final_hand, correct_hand
 
     def play_card(self, card_idx: int):
         if self.state != 'playing': return
@@ -207,17 +231,67 @@ class GameEngine:
         tgt = st.session_state.get('target', Fraction(1, 1))
         
         if curr == tgt:
-            st.session_state.game_state = 'won'
-            st.session_state.msg = "🎉 完美平衡！(Perfect Equilibrium)"
+            self._trigger_end_game('won')
         elif curr > tgt:
-            st.session_state.game_state = 'lost'
-            st.session_state.msg = "💥 能量過載！超過目標值了"
+            self._trigger_end_game('lost_over')
         elif not st.session_state.get('hand', []):
-            st.session_state.game_state = 'lost'
-            st.session_state.msg = "💀 資源耗盡！手牌用光了"
+            self._trigger_end_game('lost_empty')
         else:
             diff = tgt - curr
             st.session_state.msg = f"🚀 推進中... 還差 {diff}"
+
+    def _trigger_end_game(self, status):
+        """
+        統一處理遊戲結束邏輯，生成戰術回饋
+        """
+        st.session_state.game_state = 'won' if status == 'won' else 'lost'
+        
+        if status == 'won':
+            st.session_state.msg = "🎉 完美平衡！(Perfect Equilibrium)"
+            st.session_state.feedback = self._generate_feedback(status)
+        elif status == 'lost_over':
+            st.session_state.msg = "💥 能量過載！(Entropy Overflow)"
+            st.session_state.feedback = self._generate_feedback(status)
+        elif status == 'lost_empty':
+            st.session_state.msg = "💀 資源耗盡！(Resource Depleted)"
+            st.session_state.feedback = self._generate_feedback(status)
+
+    def _generate_feedback(self, status) -> str:
+        """
+        生成具體的數學建議 (Metacognitive Feedback)
+        """
+        tgt = st.session_state.target
+        curr = st.session_state.current
+        sol = st.session_state.solution_str
+        
+        if status == 'won':
+            tips = [
+                "✅ **思維模型：** 你成功運用了「部分之和等於整體」。",
+                "✅ **直覺建立：** 記住這個組合，下次遇到類似的分數可以直接反應。",
+                "✅ **精準度：** 零誤差操作，熵值降為最低。"
+            ]
+            return random.choice(tips)
+            
+        elif status == 'lost_over':
+            diff = curr - tgt
+            return f"""
+            **❌ 誤差分析：**
+            *   你超出了目標 **{diff}**。
+            *   這意味著你多打出了一張約等於 **{float(diff):.2f}** 的牌。
+            *   **正確路徑：** 系統最佳解是：`{sol}`
+            *   **建議：** 下次試著先在腦中估算總和，不要急著出牌。
+            """
+            
+        elif status == 'lost_empty':
+            diff = tgt - curr
+            return f"""
+            **❌ 誤差分析：**
+            *   你還缺少 **{diff}** 才能到達目標。
+            *   看來你把關鍵的牌當作干擾牌保留了，或者順序策略有誤。
+            *   **正確路徑：** 系統最佳解是：`{sol}`
+            *   **建議：** 觀察分母的倍數關係（如 1/2 = 2/4），尋找通分後的組合。
+            """
+        return ""
 
     def next_level(self):
         self.start_level(self.level + 1)
@@ -243,7 +317,6 @@ max_val = max(target_val * Fraction(3, 2), Fraction(2, 1))
 curr_pct = min((engine.current / max_val) * 100, 100)
 tgt_pct = (engine.target / max_val) * 100
 
-# 修正：移除縮排以避免被誤判為程式碼區塊
 html_content = f"""
 <div class="game-container">
 <div style="display: flex; justify-content: space-between; font-family: monospace;">
@@ -261,10 +334,9 @@ html_content = f"""
 """
 st.markdown(html_content, unsafe_allow_html=True)
 
-# 2. 手牌區 (Interaction Layer)
-st.write("### 🎴 你的策略手牌")
-
+# 2. 遊戲互動區 (Interaction Layer)
 if engine.state == 'playing':
+    st.write("### 🎴 你的策略手牌")
     if engine.hand:
         cols = st.columns(len(engine.hand))
         for i, card in enumerate(engine.hand):
@@ -273,17 +345,27 @@ if engine.state == 'playing':
                     engine.play_card(i)
                     st.rerun()
     else:
-        st.info("手牌已空")
+        st.info("手牌已空，正在結算...")
+
 else:
-    # 遊戲結束按鈕
-    result_col1, result_col2 = st.columns(2)
-    with result_col1:
+    # --- 遊戲結束結算區 (Game Over / Win UI) ---
+    st.markdown("---")
+    
+    # 顯示戰術回饋 (Tactical Feedback)
+    if engine.state == 'won':
+        st.success(f"### 🏆 挑戰成功！\n\n{engine.feedback}")
+    else:
+        st.error(f"### ⚠️ 運算崩潰\n\n{engine.feedback}")
+    
+    # 操作按鈕
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
         if engine.state == 'won':
-            if st.button("🚀 下一關", type="primary", use_container_width=True):
+            if st.button("🚀 進入下一層維度 (Next Level)", type="primary", use_container_width=True):
                 engine.next_level()
                 st.rerun()
         else:
-            if st.button("🔄 再試一次", type="secondary", use_container_width=True):
+            if st.button("🔄 重置時間線 (Retry)", type="secondary", use_container_width=True):
                 engine.retry_level()
                 st.rerun()
 
