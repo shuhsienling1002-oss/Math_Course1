@@ -41,6 +41,11 @@ st.markdown("""
         transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     
+    /* 進度條-超過目標時變色 (警告色) */
+    .progress-fill.warning {
+        background: linear-gradient(90deg, #f9e2af, #fab387);
+    }
+    
     /* 目標標記 */
     .target-marker {
         position: absolute;
@@ -77,6 +82,7 @@ st.markdown("""
         font-weight: bold;
         color: #f9e2af;
         margin-bottom: 10px;
+        min-height: 1.5em;
     }
     
     /* 數學推導區塊優化 */
@@ -169,7 +175,7 @@ class Card:
         return self.display
 
 # ==========================================
-# 3. 核心引擎 (Game Engine) - 負數增強版 v3.1
+# 3. 核心引擎 (Game Engine) - 智能判定版 v3.2
 # ==========================================
 
 class GameEngine:
@@ -202,7 +208,7 @@ class GameEngine:
     def start_level(self, level: int):
         st.session_state.level = level
         
-        # 嘗試生成直到目標大於 0 (避免負目標導致進度條壞掉)
+        # 嘗試生成直到目標大於 0
         while True:
             target, start_val, hand, correct_subset = self._generate_math_data(level)
             if target > 0:
@@ -282,14 +288,29 @@ class GameEngine:
     def _check_win_condition(self):
         curr = st.session_state.get('current', Fraction(0, 1))
         tgt = st.session_state.get('target', Fraction(1, 1))
+        hand = st.session_state.get('hand', [])
+        
+        # 檢查手牌中是否還有負數牌 (救命稻草)
+        has_negative_cards = any(c.numerator < 0 for c in hand)
         
         if curr == tgt:
             self._trigger_end_game('won')
-        # 注意：有負數時，超過目標不代表輸了，因為可以減回來！
-        # 只有當手牌用完且未達目標時才算輸。
-        elif not st.session_state.get('hand', []):
+            
+        elif curr > tgt:
+            # 情況 A: 超過目標，但還有負數牌可以救
+            if has_negative_cards:
+                diff = curr - tgt
+                st.session_state.msg = f"⚠️ 超過了 {diff}！快用紅色負數牌修正！"
+            # 情況 B: 超過目標，且手上只剩正數牌 (死局)
+            else:
+                self._trigger_end_game('lost_over')
+                
+        elif not hand:
+            # 情況 C: 手牌用完，未達目標
             self._trigger_end_game('lost_empty')
+            
         else:
+            # 情況 D: 正常推進中
             diff = tgt - curr
             st.session_state.msg = f"🚀 計算中... 距離目標還差 {diff}"
 
@@ -299,6 +320,9 @@ class GameEngine:
         if status == 'won':
             st.session_state.msg = "🎉 挑戰成功！"
             st.session_state.feedback_header = "✅ 太棒了！正負抵銷後剛好命中！"
+        elif status == 'lost_over':
+            st.session_state.msg = "💥 爆掉了！"
+            st.session_state.feedback_header = "❌ 超過目標，且沒有負數牌可以救了。"
         elif status == 'lost_empty':
             st.session_state.msg = "💀 牌用光了！"
             st.session_state.feedback_header = "❌ 牌都出完了，但還沒湊到目標。"
@@ -399,12 +423,15 @@ st.markdown(f"<div class='status-msg'>{engine.message}</div>", unsafe_allow_html
 
 # 1. 視覺化軌道
 target_val = engine.target if engine.target > 0 else Fraction(1, 1)
-# 為了適應負數操作，最大值稍微拉寬一點
 max_val = max(target_val * Fraction(3, 2), Fraction(2, 1)) 
 
-# 處理負數進度條 (如果小於0，就顯示0，或者您可以設計反向進度條，這裡先簡單處理)
+# 處理負數進度條
 curr_pct = max(0, min((engine.current / max_val) * 100, 100))
 tgt_pct = (engine.target / max_val) * 100
+
+# 判斷是否超過目標 (用於改變顏色)
+is_overshot = engine.current > engine.target
+fill_class = "progress-fill warning" if is_overshot else "progress-fill"
 
 html_content = f"""
 <div class="game-container">
@@ -414,7 +441,7 @@ html_content = f"""
 </div>
 <div class="progress-track">
 <div class="target-marker" style="left: {float(tgt_pct)}%;"></div>
-<div class="progress-fill" style="width: {float(curr_pct)}%;"></div>
+<div class="{fill_class}" style="width: {float(curr_pct)}%;"></div>
 </div>
 <div style="text-align: center; font-size: 24px; font-weight: bold;">
 當前總和: <span style="color: #89b4fa;">{engine.current}</span>
@@ -476,5 +503,8 @@ with st.sidebar:
     2. **正負數**: 
        - 🟦 藍色牌是 **加分**。
        - 🟥 紅色牌是 **扣分** (負數)。
-    3. **策略**: 如果加過頭了，可以用紅牌減回來喔！
+    3. **策略**: 
+       - 如果超過目標，進度條會變 **橘色**。
+       - 這時必須打出 **紅牌** 才能救回來！
+       - 如果沒有紅牌了，就會直接爆掉喔。
     """)
