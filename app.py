@@ -7,10 +7,10 @@ from typing import List, Tuple, Optional
 from itertools import combinations
 
 # ==========================================
-# 1. 配置與 CSS (Strict Edition)
+# 1. 配置與 CSS (Dynamic Edition)
 # ==========================================
 st.set_page_config(
-    page_title="分數拼湊 v4.2", 
+    page_title="分數拼湊 v4.3", 
     page_icon="🧩", 
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -133,10 +133,11 @@ class Card:
         full_class = "pie-full-negative" if is_neg else "pie-full"
         
         html_content = ""
-        display_integers = min(integer_part, 2) 
+        # 顯示最多 3 個滿圓，避免手機版面爆掉
+        display_integers = min(integer_part, 3) 
         for _ in range(display_integers):
             html_content += f'<div class="pie-chart {full_class}" style="--p: 100%;"></div>'
-        if integer_part > 2:
+        if integer_part > 3:
             html_content += '<span style="font-size:16px; color:#f9e2af; font-weight:bold;">+..</span>'
         if fraction_part > 0:
             percent = float(fraction_part) * 100
@@ -145,7 +146,7 @@ class Card:
         return f'<div class="fraction-visual-container">{html_content}</div>'
 
 # ==========================================
-# 3. 核心引擎
+# 3. 核心引擎 (Dynamic Targets)
 # ==========================================
 
 class GameEngine:
@@ -169,21 +170,49 @@ class GameEngine:
         st.session_state.msg_type = "info"
         st.session_state.solvable = True
         
-        # [v4.2]: 移除 hint 相關狀態
         GameEngine.check_solvability()
 
     @staticmethod
     def _generate_smart_math(level: int):
+        # [v4.3 Feature]: 動態目標生成
+        # 透過 random.choice 讓每一局的目標都不一樣
+        
         pools = {
-            1: {'dens': [2, 4], 'target': Fraction(1, 1), 'count': 3, 'neg': False},     
-            2: {'dens': [2, 3, 6], 'target': Fraction(1, 1), 'count': 3, 'neg': False},  
-            3: {'dens': [2, 4, 8], 'target': Fraction(2, 1), 'count': 4, 'neg': True},   
-            4: {'dens': [2, 5, 10], 'target': Fraction(0, 1), 'count': 4, 'neg': True},  
-            5: {'dens': [3, 4, 6], 'target': Fraction(1, 1), 'count': 5, 'neg': True}    
+            1: {
+                'dens': [2, 4], 
+                'target_pool': [Fraction(1, 1)], # 暖身固定為 1
+                'count': 3, 'neg': False,
+                'title': "暖身：完整的一 (Target 1)"
+            },     
+            2: {
+                'dens': [2, 3, 6], 
+                'target_pool': [Fraction(1, 1), Fraction(2, 1)], # 目標可能是 1 或 2
+                'count': 3, 'neg': False,
+                'title': "進階：1 與 2 的切換"
+            },  
+            3: {
+                'dens': [2, 4, 8], 
+                'target_pool': [Fraction(1, 1), Fraction(2, 1), Fraction(3, 1), Fraction(3, 2)], # 更多變化 (含1.5)
+                'count': 4, 'neg': True,
+                'title': "挑戰：整數與帶分數"
+            },   
+            4: {
+                'dens': [2, 5, 10], 
+                'target_pool': [Fraction(0, 1)], # 負數歸零關卡固定為 0
+                'count': 4, 'neg': True,
+                'title': "歸零：正負抵銷 (Target 0)"
+            },  
+            5: {
+                'dens': [3, 4, 6], 
+                'target_pool': [Fraction(1, 1), Fraction(2, 1), Fraction(1, 2)], # 混合：可能有 0.5
+                'count': 5, 'neg': True,
+                'title': "大師：變幻莫測"
+            }    
         }
         cfg = pools.get(level, pools[5])
         
-        target_val = cfg['target']
+        # 隨機選取目標
+        target_val = random.choice(cfg['target_pool'])
         correct_hand = []
         
         current_sum = Fraction(0, 1)
@@ -197,6 +226,7 @@ class GameEngine:
             
         needed = target_val - current_sum
         
+        # 防止生成太醜的分數 (分母大於20或分子絕對值大於10)
         if needed.denominator > 20 or abs(needed.numerator) > 10:
             return GameEngine._generate_smart_math(level)
             
@@ -214,15 +244,7 @@ class GameEngine:
         hand = correct_hand + distractors
         random.shuffle(hand)
         
-        title_map = {
-            1: "暖身：二分之一的世界",
-            2: "通分：2, 3, 6 的關係",
-            3: "進階：湊出整數 2",
-            4: "歸零：正負抵銷",
-            5: "挑戰：混合運算"
-        }
-        
-        return target_val, Fraction(0, 1), hand, title_map.get(level, "挑戰")
+        return target_val, Fraction(0, 1), hand, cfg['title']
 
     @staticmethod
     def check_solvability():
@@ -233,7 +255,6 @@ class GameEngine:
         vals = [c.value for c in hand]
         possible = False
         
-        # [v4.2]: 保留死局運算，但不保存 hint_card_val
         for r in range(len(vals) + 1):
             for subset in combinations(vals, r):
                 if sum(subset) == needed:
@@ -291,7 +312,10 @@ def render_message_box(msg, type='info'):
     st.markdown(html, unsafe_allow_html=True)
 
 def render_dashboard(current: Fraction, target: Fraction):
+    # 計算進度條最大值，需考慮目標變動
     calc_target = target if target != 0 else Fraction(1,1)
+    
+    # 動態調整 max_val，確保目標不會頂到最右邊
     max_val = max(calc_target * Fraction(3, 2), current * Fraction(11, 10), Fraction(2, 1))
     if max_val == 0: max_val = Fraction(1,1)
 
@@ -391,7 +415,7 @@ if st.session_state.game_status == 'playing':
                 )
 
     st.markdown("---")
-    # [v4.2]: 移除提示按鈕，悔棋按鈕全寬
+    # 悔棋按鈕全寬 (無提示)
     st.button("↩️ 悔棋 (Undo)", on_click=GameEngine.undo_callback, use_container_width=True)
 
 else:
