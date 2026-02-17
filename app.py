@@ -10,7 +10,7 @@ from itertools import combinations
 # 1. 配置與 CSS
 # ==========================================
 st.set_page_config(
-    page_title="分數拼湊 v3.7", 
+    page_title="分數拼湊 v3.8", 
     page_icon="🧩", 
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -150,7 +150,7 @@ class Card:
         return f'<div class="fraction-visual-container">{html_content}</div>'
 
 # ==========================================
-# 3. 核心引擎 (Fix: Hint Logic)
+# 3. 核心引擎
 # ==========================================
 
 class GameEngine:
@@ -174,12 +174,12 @@ class GameEngine:
         st.session_state.msg_type = "info"
         st.session_state.solvable = True
         
-        # [Fix]: 初始化時先清空舊提示，並立即計算新提示
         st.session_state.hint_card_val = None
         GameEngine.check_solvability()
 
     @staticmethod
     def _generate_smart_math(level: int):
+        # Lv4 的目標明確設為 0
         pools = {
             1: {'dens': [2, 4], 'target': Fraction(1, 1), 'count': 3, 'neg': False},     
             2: {'dens': [2, 3, 6], 'target': Fraction(1, 1), 'count': 3, 'neg': False},  
@@ -239,14 +239,12 @@ class GameEngine:
         vals = [c.value for c in hand]
         possible = False
         
-        # [Fix]: 確保 hint_card_val 每次都重置，避免殘留
         st.session_state.hint_card_val = None
 
         for r in range(len(vals) + 1):
             for subset in combinations(vals, r):
                 if sum(subset) == needed:
                     possible = True
-                    # 找到路徑，記錄第一張牌作為提示
                     st.session_state.hint_card_val = subset[0] if subset else None
                     break
             if possible: break
@@ -279,7 +277,6 @@ class GameEngine:
 
     @staticmethod
     def hint_callback():
-        # [Fix]: 增加防禦性邏輯，如果找不到卡片，明確報錯
         found = False
         if hasattr(st.session_state, 'hint_card_val') and st.session_state.hint_card_val is not None:
             val = st.session_state.hint_card_val
@@ -291,7 +288,6 @@ class GameEngine:
                     break
         
         if not found:
-             # 如果真的無解或程式邏輯異常，至少給出反饋
              st.session_state.msg = "💡 提示：目前無解，請先悔棋"
              st.session_state.msg_type = "warning"
 
@@ -305,7 +301,7 @@ class GameEngine:
             st.session_state.msg_type = "success"
 
 # ==========================================
-# 4. UI 渲染層
+# 4. UI 渲染層 (Display Logic Fix)
 # ==========================================
 
 def render_message_box(msg, type='info'):
@@ -320,8 +316,10 @@ def render_message_box(msg, type='info'):
     st.markdown(html, unsafe_allow_html=True)
 
 def render_dashboard(current: Fraction, target: Fraction):
-    if target == 0: target = Fraction(1,1)
-    max_val = max(target * Fraction(3, 2), current * Fraction(11, 10), Fraction(2, 1))
+    # [Fix]: 使用 calc_target 進行運算，不污染顯示用的 target 變數
+    calc_target = target if target != 0 else Fraction(1,1)
+    
+    max_val = max(calc_target * Fraction(3, 2), current * Fraction(11, 10), Fraction(2, 1))
     if max_val == 0: max_val = Fraction(1,1)
 
     curr_pct = float(current / max_val) * 100
