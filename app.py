@@ -7,10 +7,10 @@ from typing import List, Tuple, Optional
 from itertools import combinations
 
 # ==========================================
-# 1. 配置與 CSS (Full Feature Edition)
+# 1. 配置與 CSS (Strict Edition)
 # ==========================================
 st.set_page_config(
-    page_title="分數拼湊 v4.1", 
+    page_title="分數拼湊 v4.2", 
     page_icon="🧩", 
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -61,7 +61,7 @@ st.markdown("""
     .pie-negative { background: conic-gradient(#f38ba8 var(--p), #45475a 0); border-color: #f38ba8; }
     .pie-full-negative { background: #f38ba8; border-color: #eba0ac; }
 
-    /* 一般按鈕 */
+    /* 按鈕樣式 */
     div.stButton > button {
         background-color: #cba6f7 !important; 
         color: #11111b !important;
@@ -145,7 +145,7 @@ class Card:
         return f'<div class="fraction-visual-container">{html_content}</div>'
 
 # ==========================================
-# 3. 核心引擎 (Complex Logic)
+# 3. 核心引擎
 # ==========================================
 
 class GameEngine:
@@ -169,11 +169,7 @@ class GameEngine:
         st.session_state.msg_type = "info"
         st.session_state.solvable = True
         
-        # [v4.1 Feature]: 提示冷卻系統
-        st.session_state.hint_mode = False
-        st.session_state.hints_left = 3  # 每關限制 3 次
-        st.session_state.hint_card_val = None
-        
+        # [v4.2]: 移除 hint 相關狀態
         GameEngine.check_solvability()
 
     @staticmethod
@@ -237,20 +233,17 @@ class GameEngine:
         vals = [c.value for c in hand]
         possible = False
         
-        st.session_state.hint_card_val = None
-
+        # [v4.2]: 保留死局運算，但不保存 hint_card_val
         for r in range(len(vals) + 1):
             for subset in combinations(vals, r):
                 if sum(subset) == needed:
                     possible = True
-                    st.session_state.hint_card_val = subset[0] if subset else None
                     break
             if possible: break
             
         st.session_state.solvable = possible
         if not possible and st.session_state.game_status == 'playing':
-            st.session_state.msg = "⚠️ 此路不通！請悔棋"
-            st.session_state.msg_type = "error"
+            st.toast("⚠️ 此路不通！請悔棋 (Dead End)", icon="🚫")
 
     @staticmethod
     def play_card_callback(card_idx: int):
@@ -260,7 +253,6 @@ class GameEngine:
             st.session_state.current += card.value
             st.session_state.played_history.append(card)
             
-            st.session_state.hint_mode = False 
             GameEngine.check_solvability()
             GameEngine._check_win_condition()
 
@@ -271,22 +263,9 @@ class GameEngine:
             st.session_state.current -= card.value
             st.session_state.hand.append(card)
             
-            st.session_state.hint_mode = False
             st.toast("已悔棋", icon="↩️")
             st.session_state.game_status = 'playing'
             GameEngine.check_solvability()
-
-    @staticmethod
-    def hint_toggle_callback():
-        # [v4.1 Feature]: 限制提示次數
-        if not st.session_state.solvable:
-            st.toast("目前無解，請先悔棋！", icon="🚫")
-        elif st.session_state.hints_left <= 0:
-            st.toast("提示次數已用完！靠自己吧！", icon="🔒")
-        else:
-            st.session_state.hint_mode = True
-            st.session_state.hints_left -= 1
-            st.toast(f"已標記建議卡片！(剩餘 {st.session_state.hints_left} 次)", icon="💡")
 
     @staticmethod
     def _check_win_condition():
@@ -294,8 +273,7 @@ class GameEngine:
         tgt = st.session_state.target
         if curr == tgt:
             st.session_state.game_status = 'won'
-            st.session_state.msg = "成功！"
-            st.session_state.msg_type = "success"
+            st.toast("挑戰成功！", icon="🎉")
 
 # ==========================================
 # 4. UI 渲染層
@@ -403,11 +381,6 @@ if st.session_state.game_status == 'playing':
                     whole = int(n/d)
                     rem = abs(n) % d
                     label = f"{whole}" if rem == 0 else f"{whole} {rem}/{d}"
-                
-                # [提示高亮]
-                if st.session_state.hint_mode and st.session_state.hint_card_val is not None:
-                    if card.value == st.session_state.hint_card_val:
-                        label = f"💡 {label}"
 
                 st.button(
                     label, 
@@ -418,14 +391,8 @@ if st.session_state.game_status == 'playing':
                 )
 
     st.markdown("---")
-    # 恢復雙按鈕佈局
-    c1, c2 = st.columns(2)
-    with c1:
-        st.button("↩️ 悔棋", on_click=GameEngine.undo_callback, use_container_width=True)
-    with c2:
-        # 提示按鈕帶有次數顯示
-        hint_label = f"💡 提示 ({st.session_state.hints_left})"
-        st.button(hint_label, on_click=GameEngine.hint_toggle_callback, use_container_width=True, disabled=st.session_state.hints_left <= 0)
+    # [v4.2]: 移除提示按鈕，悔棋按鈕全寬
+    st.button("↩️ 悔棋 (Undo)", on_click=GameEngine.undo_callback, use_container_width=True)
 
 else:
     st.markdown("---")
