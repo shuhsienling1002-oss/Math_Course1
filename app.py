@@ -10,7 +10,7 @@ from itertools import combinations
 # 1. 配置與 CSS
 # ==========================================
 st.set_page_config(
-    page_title="分數拼湊 v3.8", 
+    page_title="分數拼湊 v3.9", 
     page_icon="🧩", 
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -18,12 +18,12 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    /* 全局背景與文字 */
+    /* 全局背景 */
     .stApp { background-color: #1e1e2e; color: #ffffff; }
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* 儀表板容器 */
+    /* 儀表板 */
     .dashboard-container {
         background: #313244;
         border-radius: 12px;
@@ -33,7 +33,7 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     }
     
-    /* 算式顯示區 */
+    /* 算式區 */
     .equation-box {
         background: #11111b;
         color: #f9e2af;
@@ -47,22 +47,7 @@ st.markdown("""
         font-weight: bold;
     }
 
-    /* 自定義訊息框 */
-    .msg-box {
-        padding: 12px 16px;
-        border-radius: 8px;
-        margin-bottom: 16px;
-        font-weight: bold;
-        font-size: 1rem;
-        display: flex;
-        align-items: center;
-    }
-    .msg-info { background-color: rgba(137, 180, 250, 0.2); color: #89b4fa; border: 1px solid #89b4fa; }
-    .msg-success { background-color: rgba(166, 227, 161, 0.2); color: #a6e3a1; border: 1px solid #a6e3a1; }
-    .msg-error { background-color: rgba(243, 139, 168, 0.2); color: #f38ba8; border: 1px solid #f38ba8; }
-    .msg-warning { background-color: rgba(250, 204, 21, 0.2); color: #facc15; border: 1px solid #facc15; }
-
-    /* 圓餅圖樣式 */
+    /* 圓餅圖 */
     .fraction-visual-container {
         display: flex; gap: 4px; align-items: center; justify-content: center;
         margin-bottom: 6px; flex-wrap: wrap;
@@ -76,7 +61,7 @@ st.markdown("""
     .pie-negative { background: conic-gradient(#f38ba8 var(--p), #45475a 0); border-color: #f38ba8; }
     .pie-full-negative { background: #f38ba8; border-color: #eba0ac; }
 
-    /* 按鈕優化 */
+    /* 一般按鈕 */
     div.stButton > button {
         background-color: #cba6f7 !important; 
         color: #11111b !important;
@@ -86,9 +71,14 @@ st.markdown("""
         padding: 14px 0 !important; 
         width: 100%;
         border: 2px solid transparent !important;
+        transition: transform 0.1s;
     }
     div.stButton > button:active { transform: scale(0.96); }
-    
+
+    /* 💡 提示高亮按鈕樣式 (CSS Hack) */
+    /* 透過 Python 動態插入特定的 Key 來觸發不同樣式不太容易，
+       所以我們直接在 Python 邏輯中修改按鈕文字來達成視覺提示 */
+
     /* 進度條 */
     .progress-track {
         background: #45475a; height: 28px; border-radius: 14px;
@@ -170,16 +160,14 @@ class GameEngine:
         st.session_state.played_history = []
         st.session_state.game_status = 'playing'
         st.session_state.level_title = title
-        st.session_state.msg = "請湊出目標數值"
-        st.session_state.msg_type = "info"
         st.session_state.solvable = True
         
+        st.session_state.hint_mode = False # 是否開啟提示模式
         st.session_state.hint_card_val = None
         GameEngine.check_solvability()
 
     @staticmethod
     def _generate_smart_math(level: int):
-        # Lv4 的目標明確設為 0
         pools = {
             1: {'dens': [2, 4], 'target': Fraction(1, 1), 'count': 3, 'neg': False},     
             2: {'dens': [2, 3, 6], 'target': Fraction(1, 1), 'count': 3, 'neg': False},  
@@ -241,18 +229,19 @@ class GameEngine:
         
         st.session_state.hint_card_val = None
 
+        # 簡單窮舉，找到第一張能通往解的牌
         for r in range(len(vals) + 1):
             for subset in combinations(vals, r):
                 if sum(subset) == needed:
                     possible = True
+                    # 記錄這組解的第一張牌，作為提示目標
                     st.session_state.hint_card_val = subset[0] if subset else None
                     break
             if possible: break
             
         st.session_state.solvable = possible
         if not possible and st.session_state.game_status == 'playing':
-            st.session_state.msg = "⚠️ 此路不通！請悔棋"
-            st.session_state.msg_type = "error"
+            st.toast("⚠️ 此路不通！請悔棋", icon="🚫")
 
     @staticmethod
     def play_card_callback(card_idx: int):
@@ -261,6 +250,9 @@ class GameEngine:
             card = hand.pop(card_idx)
             st.session_state.current += card.value
             st.session_state.played_history.append(card)
+            
+            # 出牌後關閉提示，並重新計算
+            st.session_state.hint_mode = False 
             GameEngine.check_solvability()
             GameEngine._check_win_condition()
 
@@ -270,26 +262,20 @@ class GameEngine:
             card = st.session_state.played_history.pop()
             st.session_state.current -= card.value
             st.session_state.hand.append(card)
-            st.session_state.msg = "已悔棋"
-            st.session_state.msg_type = "info"
+            
+            st.session_state.hint_mode = False
+            st.toast("已悔棋", icon="↩️")
             st.session_state.game_status = 'playing'
             GameEngine.check_solvability()
 
     @staticmethod
-    def hint_callback():
-        found = False
-        if hasattr(st.session_state, 'hint_card_val') and st.session_state.hint_card_val is not None:
-            val = st.session_state.hint_card_val
-            for c in st.session_state.hand:
-                if c.value == val:
-                    st.session_state.msg = f"💡 提示：試試看 {c.numerator}/{c.denominator}"
-                    st.session_state.msg_type = "info"
-                    found = True
-                    break
-        
-        if not found:
-             st.session_state.msg = "💡 提示：目前無解，請先悔棋"
-             st.session_state.msg_type = "warning"
+    def hint_toggle_callback():
+        # 切換提示模式
+        if not st.session_state.solvable:
+            st.toast("目前無解，請先悔棋！", icon="🚫")
+        else:
+            st.session_state.hint_mode = True
+            st.toast("已標記建議卡片！", icon="💡")
 
     @staticmethod
     def _check_win_condition():
@@ -297,26 +283,14 @@ class GameEngine:
         tgt = st.session_state.target
         if curr == tgt:
             st.session_state.game_status = 'won'
-            st.session_state.msg = "成功！"
-            st.session_state.msg_type = "success"
+            st.toast("挑戰成功！", icon="🎉")
 
 # ==========================================
-# 4. UI 渲染層 (Display Logic Fix)
+# 4. UI 渲染層
 # ==========================================
-
-def render_message_box(msg, type='info'):
-    icons = {'info': 'ℹ️', 'success': '🎉', 'error': '⚠️', 'warning': '⚡'}
-    icon = icons.get(type, 'ℹ️')
-    html = f"""
-    <div class="msg-box msg-{type}">
-        <span style="margin-right:10px; font-size:1.2rem;">{icon}</span>
-        <span>{msg}</span>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
 
 def render_dashboard(current: Fraction, target: Fraction):
-    # [Fix]: 使用 calc_target 進行運算，不污染顯示用的 target 變數
+    # [Fix]: 顯示邏輯與計算邏輯分離
     calc_target = target if target != 0 else Fraction(1,1)
     
     max_val = max(calc_target * Fraction(3, 2), current * Fraction(11, 10), Fraction(2, 1))
@@ -385,15 +359,13 @@ GameEngine.init_state()
 
 st.markdown(f"#### 🧩 Lv.{st.session_state.level} {st.session_state.level_title}")
 
-render_message_box(st.session_state.msg, st.session_state.msg_type)
-
 render_dashboard(st.session_state.current, st.session_state.target)
 render_equation_log()
 
 if st.session_state.game_status == 'playing':
     hand = st.session_state.hand
     if not hand:
-        render_message_box("手牌耗盡！請重試", "error")
+        st.error("手牌耗盡！請重試")
         if st.button("🔄 重試", use_container_width=True):
             GameEngine.start_level(st.session_state.level)
             st.rerun()
@@ -403,11 +375,17 @@ if st.session_state.game_status == 'playing':
             with cols[i % 2]:
                 st.markdown(card.get_visual_html(), unsafe_allow_html=True)
                 n, d = card.numerator, card.denominator
+                
                 label = f"{n}/{d}"
                 if abs(n) >= d:
                     whole = int(n/d)
                     rem = abs(n) % d
                     label = f"{whole}" if rem == 0 else f"{whole} {rem}/{d}"
+                
+                # [UX Fix]: 提示模式下，直接修改按鈕文字來高亮
+                if st.session_state.hint_mode and st.session_state.hint_card_val is not None:
+                    if card.value == st.session_state.hint_card_val:
+                        label = f"💡 {label}"
 
                 st.button(
                     label, 
@@ -422,7 +400,8 @@ if st.session_state.game_status == 'playing':
     with c1:
         st.button("↩️ 悔棋", on_click=GameEngine.undo_callback, use_container_width=True)
     with c2:
-        st.button("💡 提示", on_click=GameEngine.hint_callback, use_container_width=True)
+        # 提示按鈕現在會觸發高亮模式
+        st.button("💡 提示", on_click=GameEngine.hint_toggle_callback, use_container_width=True)
 
 else:
     st.markdown("---")
@@ -438,9 +417,3 @@ else:
         if st.button("🔄 再試一次", type="primary", use_container_width=True):
             GameEngine.start_level(st.session_state.level)
             st.rerun()
-
-with st.expander("📘 規則與除錯"):
-    st.markdown("""
-    * **提示:** 如果不知道出什麼牌，點擊「💡 提示」。
-    * **死局:** 如果看到「⚠️ 死局」，請悔棋。
-    """)
