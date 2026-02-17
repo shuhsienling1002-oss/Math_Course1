@@ -7,10 +7,10 @@ from typing import List, Tuple, Optional
 from itertools import combinations
 
 # ==========================================
-# 1. 配置與 CSS (High Contrast Fix)
+# 1. 配置與 CSS
 # ==========================================
 st.set_page_config(
-    page_title="分數拼湊 v3.6", 
+    page_title="分數拼湊 v3.7", 
     page_icon="🧩", 
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -33,21 +33,21 @@ st.markdown("""
         box-shadow: 0 4px 10px rgba(0,0,0,0.4);
     }
     
-    /* 算式顯示區 - 增加對比度 */
+    /* 算式顯示區 */
     .equation-box {
-        background: #11111b; /* 更深的底色 */
-        color: #f9e2af;      /* 亮黃色文字 */
+        background: #11111b;
+        color: #f9e2af;
         font-family: 'Courier New', monospace;
         padding: 12px;
         border-radius: 8px;
         text-align: center;
         margin-bottom: 12px;
         border: 1px solid #45475a;
-        font-size: 1.2rem;   /* 字體加大 */
+        font-size: 1.2rem;
         font-weight: bold;
     }
 
-    /* 自定義訊息框 (取代 st.info) - 確保高對比 */
+    /* 自定義訊息框 */
     .msg-box {
         padding: 12px 16px;
         border-radius: 8px;
@@ -57,26 +57,10 @@ st.markdown("""
         display: flex;
         align-items: center;
     }
-    .msg-info { 
-        background-color: rgba(137, 180, 250, 0.2); 
-        color: #89b4fa; 
-        border: 1px solid #89b4fa; 
-    }
-    .msg-success { 
-        background-color: rgba(166, 227, 161, 0.2); 
-        color: #a6e3a1; 
-        border: 1px solid #a6e3a1; 
-    }
-    .msg-error { 
-        background-color: rgba(243, 139, 168, 0.2); 
-        color: #f38ba8; 
-        border: 1px solid #f38ba8; 
-    }
-    .msg-warning { 
-        background-color: rgba(250, 204, 21, 0.2); 
-        color: #facc15; 
-        border: 1px solid #facc15; 
-    }
+    .msg-info { background-color: rgba(137, 180, 250, 0.2); color: #89b4fa; border: 1px solid #89b4fa; }
+    .msg-success { background-color: rgba(166, 227, 161, 0.2); color: #a6e3a1; border: 1px solid #a6e3a1; }
+    .msg-error { background-color: rgba(243, 139, 168, 0.2); color: #f38ba8; border: 1px solid #f38ba8; }
+    .msg-warning { background-color: rgba(250, 204, 21, 0.2); color: #facc15; border: 1px solid #facc15; }
 
     /* 圓餅圖樣式 */
     .fraction-visual-container {
@@ -95,7 +79,7 @@ st.markdown("""
     /* 按鈕優化 */
     div.stButton > button {
         background-color: #cba6f7 !important; 
-        color: #11111b !important; /* 深色文字對比淺紫色背景 */
+        color: #11111b !important;
         border-radius: 10px !important; 
         font-size: 22px !important;
         font-weight: 800 !important; 
@@ -116,7 +100,7 @@ st.markdown("""
     .fill-danger { background: linear-gradient(90deg, #f38ba8, #eba0ac); }
     .target-line { position: absolute; top: 0; bottom: 0; width: 4px; background: #a6e3a1; z-index: 10; box-shadow: 0 0 10px #a6e3a1; }
     
-    /* 狀態標籤 - 實心化背景 */
+    /* 狀態標籤 */
     .status-badge {
         display: inline-block; padding: 6px 10px; border-radius: 6px;
         font-size: 0.9rem; font-weight: bold; margin-bottom: 10px;
@@ -124,7 +108,6 @@ st.markdown("""
     .status-ok { background: #1e3a23; color: #a6e3a1; border: 1px solid #a6e3a1; }
     .status-dead { background: #3a1e26; color: #f38ba8; border: 1px solid #f38ba8; }
 
-    /* 儀表板文字優化 */
     .dash-label { color: #bac2de; font-size: 1rem; font-weight: bold; margin-bottom: 4px; }
     .dash-value { font-size: 2rem; font-weight: 900; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
 </style>
@@ -167,7 +150,7 @@ class Card:
         return f'<div class="fraction-visual-container">{html_content}</div>'
 
 # ==========================================
-# 3. 核心引擎 (Smart Logic)
+# 3. 核心引擎 (Fix: Hint Logic)
 # ==========================================
 
 class GameEngine:
@@ -190,10 +173,13 @@ class GameEngine:
         st.session_state.msg = "請湊出目標數值"
         st.session_state.msg_type = "info"
         st.session_state.solvable = True
+        
+        # [Fix]: 初始化時先清空舊提示，並立即計算新提示
+        st.session_state.hint_card_val = None
+        GameEngine.check_solvability()
 
     @staticmethod
     def _generate_smart_math(level: int):
-        # [Model 13: 複雜適應系統] - 分組相容池
         pools = {
             1: {'dens': [2, 4], 'target': Fraction(1, 1), 'count': 3, 'neg': False},     
             2: {'dens': [2, 3, 6], 'target': Fraction(1, 1), 'count': 3, 'neg': False},  
@@ -206,7 +192,6 @@ class GameEngine:
         target_val = cfg['target']
         correct_hand = []
         
-        # 隨機生成 N-1 張牌
         current_sum = Fraction(0, 1)
         for _ in range(cfg['count'] - 1):
             d = random.choice(cfg['dens'])
@@ -216,17 +201,14 @@ class GameEngine:
             correct_hand.append(card)
             current_sum += card.value
             
-        # 計算最後一張牌
         needed = target_val - current_sum
         
-        # 簡單過濾醜數字
         if needed.denominator > 20 or abs(needed.numerator) > 10:
-            return GameEngine._generate_smart_math(level) # 重來
+            return GameEngine._generate_smart_math(level)
             
         last_card = Card(needed.numerator, needed.denominator)
         correct_hand.append(last_card)
         
-        # 加入干擾牌
         distractors = []
         d_count = 2
         for _ in range(d_count):
@@ -257,10 +239,14 @@ class GameEngine:
         vals = [c.value for c in hand]
         possible = False
         
+        # [Fix]: 確保 hint_card_val 每次都重置，避免殘留
+        st.session_state.hint_card_val = None
+
         for r in range(len(vals) + 1):
             for subset in combinations(vals, r):
                 if sum(subset) == needed:
                     possible = True
+                    # 找到路徑，記錄第一張牌作為提示
                     st.session_state.hint_card_val = subset[0] if subset else None
                     break
             if possible: break
@@ -293,15 +279,21 @@ class GameEngine:
 
     @staticmethod
     def hint_callback():
-        if hasattr(st.session_state, 'hint_card_val') and st.session_state.hint_card_val:
+        # [Fix]: 增加防禦性邏輯，如果找不到卡片，明確報錯
+        found = False
+        if hasattr(st.session_state, 'hint_card_val') and st.session_state.hint_card_val is not None:
             val = st.session_state.hint_card_val
             for c in st.session_state.hand:
                 if c.value == val:
                     st.session_state.msg = f"💡 提示：試試看 {c.numerator}/{c.denominator}"
                     st.session_state.msg_type = "info"
+                    found = True
                     break
-        else:
-             st.session_state.msg = "💡 提示：請先悔棋，目前無解"
+        
+        if not found:
+             # 如果真的無解或程式邏輯異常，至少給出反饋
+             st.session_state.msg = "💡 提示：目前無解，請先悔棋"
+             st.session_state.msg_type = "warning"
 
     @staticmethod
     def _check_win_condition():
@@ -313,7 +305,7 @@ class GameEngine:
             st.session_state.msg_type = "success"
 
 # ==========================================
-# 4. UI 渲染層 (High Contrast)
+# 4. UI 渲染層
 # ==========================================
 
 def render_message_box(msg, type='info'):
@@ -395,7 +387,6 @@ GameEngine.init_state()
 
 st.markdown(f"#### 🧩 Lv.{st.session_state.level} {st.session_state.level_title}")
 
-# 渲染自定義訊息框
 render_message_box(st.session_state.msg, st.session_state.msg_type)
 
 render_dashboard(st.session_state.current, st.session_state.target)
@@ -452,6 +443,6 @@ else:
 
 with st.expander("📘 規則與除錯"):
     st.markdown("""
-    * **死局檢測:** 如果看到「⚠️ 死局」，表示剩下的牌怎麼湊都湊不出目標了，請按悔棋。
-    * **目標鎖定:** 本版本已優化目標數值，並增強介面可讀性。
+    * **提示:** 如果不知道出什麼牌，點擊「💡 提示」。
+    * **死局:** 如果看到「⚠️ 死局」，請悔棋。
     """)
