@@ -6,16 +6,14 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 # ==========================================
-# 1. 配置與 CSS (View Layer - UI/UX-CRF)
+# 1. 配置與 CSS (View Layer)
 # ==========================================
-st.set_page_config(page_title="分數拼湊大作戰 v3.0", page_icon="🧩", layout="centered")
+st.set_page_config(page_title="分數拼湊大作戰 v3.1", page_icon="🧩", layout="centered")
 
-# 引入「多圓視覺化」CSS，解決帶分數認知錯誤
 st.markdown("""
 <style>
     .stApp { background-color: #1e1e2e; color: #cdd6f4; }
     
-    /* 遊戲容器 */
     .game-container {
         background: #313244;
         border-radius: 16px;
@@ -24,7 +22,6 @@ st.markdown("""
         box-shadow: 0 10px 30px rgba(0,0,0,0.3);
     }
     
-    /* 核心：帶分數視覺化引擎 */
     .fraction-visual-container {
         display: flex;
         gap: 4px;
@@ -33,7 +30,6 @@ st.markdown("""
         margin-bottom: 8px;
     }
     
-    /* 單一圓餅圖 */
     .pie-chart {
         width: 32px;
         height: 32px;
@@ -42,13 +38,11 @@ st.markdown("""
         border: 2px solid #cba6f7;
         flex-shrink: 0;
     }
-    /* 滿圓 (整數部分) */
     .pie-full {
         background: #89b4fa;
-        border-color: #f9e2af; /* 金邊代表整數 */
+        border-color: #f9e2af;
         box-shadow: 0 0 5px rgba(249, 226, 175, 0.5);
     }
-    /* 負數樣式 */
     .pie-negative {
         background: conic-gradient(#f38ba8 var(--p), #45475a 0);
         border-color: #f38ba8;
@@ -58,7 +52,6 @@ st.markdown("""
         border-color: #eba0ac;
     }
 
-    /* 卡片按鈕優化 */
     div.stButton > button {
         background-color: #cba6f7 !important;
         color: #181825 !important;
@@ -76,7 +69,6 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
     
-    /* 進度條 */
     .progress-track {
         background: #45475a;
         height: 36px;
@@ -88,7 +80,7 @@ st.markdown("""
     }
     .progress-fill {
         height: 100%;
-        transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); /* 彈性動畫 */
+        transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
         display: flex;
         align-items: center;
         justify-content: flex-end;
@@ -128,11 +120,6 @@ class Card:
         return Fraction(self.numerator, self.denominator)
 
     def get_visual_html(self) -> str:
-        """
-        [視覺化修正] 第一性原理：帶分數視覺化
-        如果數值是 1又1/4，應該顯示「一個滿圓 + 一個1/4圓」，
-        而不是像圖片中的錯誤那樣忽略整數。
-        """
         val = self.value
         abs_val = abs(val)
         integer_part = int(abs_val)
@@ -144,8 +131,7 @@ class Card:
         
         html = '<div class="fraction-visual-container">'
         
-        # 1. 渲染整數部分的滿圓 (防止隱形整數錯誤)
-        # 限制最多顯示 3 個滿圓以免版面爆炸
+        # 1. 渲染整數部分的滿圓
         display_integers = min(integer_part, 3) 
         for _ in range(display_integers):
             html += f'<div class="pie-chart {full_class}" style="--p: 100%;"></div>'
@@ -162,18 +148,15 @@ class Card:
         return html
 
 # ==========================================
-# 3. 核心引擎 (Logic Layer - Code-CRF)
+# 3. 核心引擎 (Logic Layer)
 # ==========================================
 
 class GameEngine:
-    """
-    使用 Streamlit Session State 進行狀態管理，
-    將邏輯與 UI 渲染解耦。
-    """
     
     @staticmethod
     def init_state():
-        if 'level' not in st.session_state:
+        # [修復]: 強制檢查 game_status，防止舊版 Session 殘留導致崩潰
+        if 'level' not in st.session_state or 'game_status' not in st.session_state:
             st.session_state.level = 1
             GameEngine.start_level(1)
 
@@ -185,21 +168,20 @@ class GameEngine:
         st.session_state.target = target
         st.session_state.current = start_val
         st.session_state.hand = hand
-        st.session_state.played_history = []  # 存儲操作歷史 (Undo用)
-        st.session_state.game_status = 'playing' # playing, won, lost
+        st.session_state.played_history = []
+        st.session_state.game_status = 'playing' # 初始化關鍵狀態
         st.session_state.level_title = title
         st.session_state.msg = "請選擇卡片湊出目標數值！"
         st.session_state.msg_type = "info"
 
     @staticmethod
     def _generate_math_data(level: int):
-        # 難度階梯 (Difficulty Ladder)
         if level == 1:
             den_pool, steps, title = [2, 4], 2, "暖身：簡單同分母"
         elif level == 2:
             den_pool, steps, title = [2, 3, 4, 6], 3, "進階：通分挑戰"
         elif level == 3:
-            den_pool, steps, title = [2, 4, 8], 3, "挑戰：帶分數的概念 (整數出現)"
+            den_pool, steps, title = [2, 4, 8], 3, "挑戰：帶分數的概念"
         elif level == 4:
             den_pool, steps, title = [2, 3, 4, 5], 4, "大師：負數逆流"
         else:
@@ -208,14 +190,11 @@ class GameEngine:
         target = Fraction(0, 1)
         hand = []
         
-        # 確保至少有一個可行解 (Nash Equilibrium)
         for _ in range(steps):
             d = random.choice(den_pool)
-            # Level 3 以上增加生成大於 1 的數 (帶分數)
             max_n = 5 if level >= 3 else 2 
             n = random.choice([x for x in range(1, max_n+1)])
             
-            # Level 4 以上引入負數
             if level >= 4 and random.random() < 0.4:
                 n = -n
                 
@@ -223,7 +202,6 @@ class GameEngine:
             hand.append(card)
             target += card.value
 
-        # 增加干擾牌 (Entropy)
         distractor_count = 2 if level < 3 else 3
         for _ in range(distractor_count):
             d = random.choice(den_pool)
@@ -236,10 +214,6 @@ class GameEngine:
 
     @staticmethod
     def play_card_callback(card_idx: int):
-        """
-        [架構優化] 使用 Callback 模式處理點擊，
-        避免 Streamlit 重繪時的狀態不同步問題。
-        """
         hand = st.session_state.hand
         if 0 <= card_idx < len(hand):
             card = hand.pop(card_idx)
@@ -267,7 +241,6 @@ class GameEngine:
             st.session_state.msg = "🎉 完美拼湊！"
             st.session_state.msg_type = "success"
         elif curr > tgt:
-            # 檢查手牌是否有負數可以救回來 (反脆弱)
             has_negative = any(c.numerator < 0 for c in st.session_state.hand)
             if not has_negative:
                 st.session_state.game_status = 'lost'
@@ -278,21 +251,22 @@ class GameEngine:
                 st.session_state.msg_type = "warning"
 
 # ==========================================
-# 4. UI 渲染層 (View Renderer)
+# 4. UI 渲染層
 # ==========================================
 
 def render_progress_bar(current: Fraction, target: Fraction):
     if target == 0: target = Fraction(1,1)
-    # 動態調整最大值，讓進度條不會破版
     max_val = max(target * Fraction(3, 2), current * Fraction(11, 10), Fraction(2, 1))
     
     curr_pct = float(current / max_val) * 100
     tgt_pct = float(target / max_val) * 100
     
-    # 狀態顏色
     fill_class = "fill-normal"
     if current > target: fill_class = "fill-warning"
-    if st.session_state.game_status == 'lost': fill_class = "fill-danger"
+    
+    # [修復]: 安全讀取 game_status，避免 AttributeError
+    status = st.session_state.get('game_status', 'playing')
+    if status == 'lost': fill_class = "fill-danger"
 
     st.markdown(f"""
     <div class="game-container">
@@ -310,26 +284,23 @@ def render_progress_bar(current: Fraction, target: Fraction):
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 5. 主程式 (Main Loop)
+# 5. 主程式
 # ==========================================
 
-# 初始化狀態
+# 狀態初始化
 GameEngine.init_state()
 
-st.title(f"🧩 分數拼湊大作戰 v3.0")
+st.title(f"🧩 分數拼湊大作戰 v3.1")
 st.caption(f"Level {st.session_state.level}: {st.session_state.level_title}")
 
-# 訊息提示
 msg_type = st.session_state.get('msg_type', 'info')
 if msg_type == 'success': st.success(st.session_state.msg)
 elif msg_type == 'error': st.error(st.session_state.msg)
 elif msg_type == 'warning': st.warning(st.session_state.msg)
 else: st.info(st.session_state.msg)
 
-# 渲染進度條
 render_progress_bar(st.session_state.current, st.session_state.target)
 
-# 遊戲區域
 if st.session_state.game_status == 'playing':
     st.markdown("### 🎴 你的手牌")
     
@@ -340,18 +311,13 @@ if st.session_state.game_status == 'playing':
             GameEngine.start_level(st.session_state.level)
             st.rerun()
     else:
-        # 使用 Streamlit Columns 佈局
         cols = st.columns(4)
         for i, card in enumerate(hand):
             with cols[i % 4]:
-                # 視覺化 HTML (多圓設計)
                 st.markdown(card.get_visual_html(), unsafe_allow_html=True)
-                
-                # 按鈕 (使用 callback)
-                # 這裡使用了帶分數格式化顯示，強化整數概念
                 n, d = card.numerator, card.denominator
                 label = f"{n}/{d}"
-                if abs(n) >= d: # 如果是假分數，顯示帶分數提示
+                if abs(n) >= d:
                     whole = int(n/d)
                     rem = abs(n) % d
                     if rem == 0: label = f"{whole}"
@@ -366,15 +332,13 @@ if st.session_state.game_status == 'playing':
                 )
 
     st.markdown("---")
-    # 功能區
     c1, c2 = st.columns([1, 4])
     with c1:
         st.button("↩️ 悔棋", on_click=GameEngine.undo_callback)
 
 else:
-    # 結算畫面
     st.markdown("---")
-    if st.session_state.game_state == 'won':
+    if st.session_state.game_status == 'won':
         st.balloons()
         c1, c2 = st.columns(2)
         with c1:
@@ -390,14 +354,12 @@ else:
             GameEngine.start_level(st.session_state.level)
             st.rerun()
 
-# 側邊欄
 with st.sidebar:
     st.markdown("### 📘 數學之眼")
     st.markdown("""
-    **為什麼有時候圓圈是滿的？**
-    * 當分數大於 1 (例如 5/4) 時，它包含了一個完整的整數 (4/4) 和剩下的小部分 (1/4)。
-    * 我們將滿圓畫出來，幫助你**看見**那些容易被忽略的整數！
+    **帶分數視覺化 (Anti-Ghost Integer):**
+    * 當分數大於 1 時，我們會畫出**完整的滿圓**，代表被忽略的整數。
+    * 不要只看分數部分，整數也是運算的一部分！
     """)
-    
     st.markdown(f"**目前數值:** `{st.session_state.current}`")
     st.markdown(f"**目標數值:** `{st.session_state.target}`")
