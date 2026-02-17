@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 # ==========================================
-# 1. 配置與 CSS (Math-First Mobile Design)
+# 1. 配置與 CSS (Fix: Rendering Logic)
 # ==========================================
 st.set_page_config(
-    page_title="分數拼湊 v3.3", 
+    page_title="分數拼湊 v3.4", 
     page_icon="🧩", 
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -81,7 +81,7 @@ st.markdown("""
         background-color: #cba6f7 !important;
         color: #181825 !important;
         border-radius: 10px !important;
-        font-size: 20px !important; /* 字體再加大 */
+        font-size: 20px !important;
         font-weight: bold !important;
         padding: 12px 0 !important;
         width: 100%;
@@ -137,17 +137,18 @@ class Card:
         pie_class = "pie-negative" if is_neg else "pie-chart"
         full_class = "pie-full-negative" if is_neg else "pie-full"
         
-        html = '<div class="fraction-visual-container">'
+        # [Fix]: 移除 HTML 字串內的所有縮排，防止被解析為代碼區塊
+        html_content = ""
         display_integers = min(integer_part, 2) 
         for _ in range(display_integers):
-            html += f'<div class="pie-chart {full_class}" style="--p: 100%;"></div>'
+            html_content += f'<div class="pie-chart {full_class}" style="--p: 100%;"></div>'
         if integer_part > 2:
-            html += '<span style="font-size:14px; color:#f9e2af;">+..</span>'
+            html_content += '<span style="font-size:14px; color:#f9e2af;">+..</span>'
         if fraction_part > 0:
             percent = float(fraction_part) * 100
-            html += f'<div class="{pie_class}" style="--p: {percent}%;"></div>'
-        html += '</div>'
-        return html
+            html_content += f'<div class="{pie_class}" style="--p: {percent}%;"></div>'
+
+        return f'<div class="fraction-visual-container">{html_content}</div>'
 
 # ==========================================
 # 3. 核心引擎
@@ -239,11 +240,10 @@ class GameEngine:
                 st.session_state.msg_type = "warning"
 
 # ==========================================
-# 4. UI 渲染層 (Clear Math Dashboard)
+# 4. UI 渲染層 (Fix: Indentation Removed)
 # ==========================================
 
 def render_dashboard(current: Fraction, target: Fraction):
-    # 計算進度條百分比
     if target == 0: target = Fraction(1,1)
     max_val = max(target * Fraction(3, 2), current * Fraction(11, 10), Fraction(2, 1))
     curr_pct = float(current / max_val) * 100
@@ -251,36 +251,37 @@ def render_dashboard(current: Fraction, target: Fraction):
     
     fill_class = "progress-fill"
     if current > target: fill_class += " fill-warning"
-    if st.session_state.game_status == 'lost': fill_class += " fill-danger"
+    status = st.session_state.get('game_status', 'playing')
+    if status == 'lost': fill_class += " fill-danger"
 
-    # [修復重點]：這裡使用 LaTeX 顯示大大的數字，讓題目一目了然
-    st.markdown(f"""
-    <div class="dashboard-container">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <div style="text-align:center; width:45%;">
-                <div style="color:#a6adc8; font-size:0.9rem;">🎯 目標 (Target)</div>
-                <div style="font-size:1.8rem; font-weight:bold; color:#a6e3a1;">
-                    {target}
-                </div>
-            </div>
-            <div style="font-size:1.5rem; color:#585b70;">vs</div>
-            <div style="text-align:center; width:45%;">
-                <div style="color:#a6adc8; font-size:0.9rem;">⚗️ 當前 (Current)</div>
-                <div style="font-size:1.8rem; font-weight:bold; color:#89b4fa;">
-                    {current}
-                </div>
+    # [CRITICAL FIX]: 使用 f-string 時，HTML 標籤必須「頂格寫」(Flush Left)
+    # 只要前面有縮排，Streamlit 就會以為是 Code Block 而顯示原始碼。
+    html = f"""
+<div class="dashboard-container">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <div style="text-align:center; width:45%;">
+            <div style="color:#a6adc8; font-size:0.9rem;">🎯 目標 (Target)</div>
+            <div style="font-size:1.8rem; font-weight:bold; color:#a6e3a1;">
+                {target}
             </div>
         </div>
-        
-        <div class="progress-track">
-            <div class="target-line" style="left: {tgt_pct}%;"></div>
-            <div class="{fill_class}" style="width: {max(0, min(curr_pct, 100))}%;"></div>
+        <div style="font-size:1.5rem; color:#585b70;">vs</div>
+        <div style="text-align:center; width:45%;">
+            <div style="color:#a6adc8; font-size:0.9rem;">⚗️ 當前 (Current)</div>
+            <div style="font-size:1.8rem; font-weight:bold; color:#89b4fa;">
+                {current}
+            </div>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    <div class="progress-track">
+        <div class="target-line" style="left: {tgt_pct}%;"></div>
+        <div class="{fill_class}" style="width: {max(0, min(curr_pct, 100))}%;"></div>
+    </div>
+</div>
+"""
+    st.markdown(html, unsafe_allow_html=True)
 
 def render_equation_log():
-    # [修復重點]：顯示算式，讓學生知道自己在算什麼
     history = st.session_state.played_history
     if not history:
         eq_text = "0 (起點)"
@@ -292,6 +293,7 @@ def render_equation_log():
             parts.append(val_str)
         eq_text = " + ".join(parts) + f" = {st.session_state.current}"
     
+    # 同樣確保這裡沒有多餘縮排
     st.markdown(f'<div class="equation-box">{eq_text}</div>', unsafe_allow_html=True)
 
 # ==========================================
@@ -310,13 +312,13 @@ elif msg_type == 'error': st.error(st.session_state.msg)
 elif msg_type == 'warning': st.warning(st.session_state.msg)
 else: st.info(st.session_state.msg)
 
-# 1. 儀表板 (Dashboard) - 顯示題目
+# 1. 儀表板
 render_dashboard(st.session_state.current, st.session_state.target)
 
-# 2. 算式區 (Equation) - 顯示過程
+# 2. 算式區
 render_equation_log()
 
-# 3. 操作區 (Hand)
+# 3. 操作區
 if st.session_state.game_status == 'playing':
     hand = st.session_state.hand
     if not hand:
@@ -331,7 +333,6 @@ if st.session_state.game_status == 'playing':
                 st.markdown(card.get_visual_html(), unsafe_allow_html=True)
                 n, d = card.numerator, card.denominator
                 
-                # 按鈕文字
                 label = f"{n}/{d}"
                 if abs(n) >= d:
                     whole = int(n/d)
@@ -350,7 +351,6 @@ if st.session_state.game_status == 'playing':
     st.button("↩️ 悔棋 (Undo)", on_click=GameEngine.undo_callback, use_container_width=True)
 
 else:
-    # 結算區
     st.markdown("---")
     if st.session_state.game_status == 'won':
         st.balloons()
@@ -365,7 +365,6 @@ else:
             GameEngine.start_level(st.session_state.level)
             st.rerun()
 
-# 底部摺疊說明
 with st.expander("📘 規則說明"):
     st.markdown("""
     1. **看上面:** 左邊是目標，右邊是你目前的總和。
